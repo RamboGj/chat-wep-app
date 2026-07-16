@@ -16,6 +16,13 @@
   --color-brand-500: #6c5ce7;
   --color-brand-400: #8b7cf6;
   --color-brand-100: #c9c2ff;
+
+  --color-success-500: #2fe6b8;
+  --color-error-500: #ff6b81;
+  --color-info-500: #3d7cd9;
+
+  --font-sora: "Sora", sans-serif;
+  --font-manrope: "Manrope", sans-serif;
 }
 
 /* @layer base {
