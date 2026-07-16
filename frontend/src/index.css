@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* @custom-variant dark (&:where(.dark, .dark *)); */
 
@@ -10,7 +10,7 @@
   --color-gray-500: #1a2029;
   --color-gray-400: #2a313d;
   --color-gray-300: #5c6472;
-  --color-gray-200: #8b95a1;
+  --color-gray-200: #161c25;
   --color-gray-100: #eef1f5;
 
   --color-brand-500: #6c5ce7;
@@ -21,8 +21,13 @@
   --color-error-500: #ff6b81;
   --color-info-500: #3d7cd9;
 
-  --font-sora: "Sora", sans-serif;
-  --font-manrope: "Manrope", sans-serif;
+  --color-white-08: rgba(255, 255, 255, 0.08);
+  --color-white-10: rgba(255, 255, 255, 0.1);
+  --color-white-12: rgba(255, 255, 255, 0.12);
+  --color-white-25: rgba(255, 255, 255, 0.25);
+
+  --font-sora: 'Sora', sans-serif;
+  --font-manrope: 'Manrope', sans-serif;
 }
 
 /* @layer base {

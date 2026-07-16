@@ -1,30 +1,27 @@
 import type { ComponentProps } from 'react'
+import { Input } from '../../../components/atoms/Input/Input'
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface LoginFormProps extends ComponentProps<'form'> {}
 
 export function LoginForm({ ...rest }: LoginFormProps) {
   return (
-    <form {...rest}>
-      <fieldset>
-        <label htmlFor="email">Email</label>
-        <input
-          type="email"
-          name="email"
-          id="email"
-          placeholder="john@example.com"
-        />
-      </fieldset>
+    <form className="flex flex-col space-y-4 mt-12" {...rest}>
+      <Input
+        label="Email"
+        type="email"
+        name="email"
+        id="email"
+        placeholder="john@example.com"
+      />
 
-      <fieldset>
-        <label htmlFor="password">Password</label>
-        <input
-          type="password"
-          name="password"
-          id="password"
-          placeholder="••••••••"
-        />
-      </fieldset>
+      <Input
+        label="Password"
+        type="password"
+        name="password"
+        id="password"
+        placeholder="••••••••"
+      />
 
       <button type="submit">Log in</button>
     </form>
