@@ -1,12 +1,16 @@
 import type { ComponentProps } from 'react'
 import { Input } from '../../../components/atoms/Input/Input'
+import { Button } from '@/components/atoms/Button/Button'
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface LoginFormProps extends ComponentProps<'form'> {}
 
 export function LoginForm({ ...rest }: LoginFormProps) {
   return (
-    <form className="flex flex-col space-y-4 mt-12" {...rest}>
+    <form
+      className="flex flex-col space-y-4 mt-12 animate-showContent"
+      {...rest}
+    >
       <Input
         label="Email"
         type="email"
@@ -23,7 +27,7 @@ export function LoginForm({ ...rest }: LoginFormProps) {
         placeholder="••••••••"
       />
 
-      <button type="submit">Log in</button>
+      <Button className="mt-10" label="Log in" type="submit" />
     </form>
   )
 }

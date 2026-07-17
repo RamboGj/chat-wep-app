@@ -1,3 +1,5 @@
+import { Button } from '@/components/atoms/Button/Button'
+import { Input } from '@/components/atoms/Input/Input'
 import type { ComponentProps } from 'react'
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -5,48 +7,43 @@ interface SignupFormProps extends ComponentProps<'form'> {}
 
 export function SignupForm({ ...rest }: SignupFormProps) {
   return (
-    <form {...rest}>
-      <fieldset>
-        <label htmlFor="username">Username</label>
-        <input
-          type="text"
-          name="username"
-          id="username"
-          placeholder="john_doe"
-        />
-      </fieldset>
+    <form
+      className="flex flex-col space-y-4 mt-12 animate-showContent"
+      {...rest}
+    >
+      <Input
+        label="Username"
+        type="text"
+        name="username"
+        id="username"
+        placeholder="john_doe"
+      />
 
-      <fieldset>
-        <label htmlFor="email">Email</label>
-        <input
-          type="email"
-          name="email"
-          id="email"
-          placeholder="john@example.com"
-        />
-      </fieldset>
+      <Input
+        label="Email"
+        type="email"
+        name="email"
+        id="email"
+        placeholder="john@example.com"
+      />
 
-      <fieldset>
-        <label htmlFor="password">Password</label>
-        <input
-          type="password"
-          name="password"
-          id="password"
-          placeholder="••••••••"
-        />
-      </fieldset>
+      <Input
+        label="Password"
+        type="password"
+        name="password"
+        id="password"
+        placeholder="••••••••"
+      />
 
-      <fieldset>
-        <label htmlFor="confirm_password">Confirm Password</label>
-        <input
-          type="password"
-          name="confirm_password"
-          id="confirm_password"
-          placeholder="••••••••"
-        />
-      </fieldset>
+      <Input
+        label="Confirm Password"
+        type="password"
+        name="confirm_password"
+        id="confirm_password"
+        placeholder="••••••••"
+      />
 
-      <button type="submit">Create account</button>
+      <Button className="mt-10" label="Create account" type="submit" />
     </form>
   )
 }
