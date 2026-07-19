@@ -23,7 +23,11 @@ export const ZSignUpSchema = z
     message: 'Passwords do not match',
   })
 
+// Login deliberately does not reuse ZPasswordSchema: the strength rules apply
+// when choosing a password, not when typing an existing one. Enforcing them
+// here would reject valid older passwords and advertise the policy to anyone
+// probing the form.
 export const ZLoginSchema = z.object({
   email: z.email('Invalid e-mail'),
-  password: ZPasswordSchema,
+  password: z.string().min(1, 'Password is required'),
 })
