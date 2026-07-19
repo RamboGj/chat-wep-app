@@ -53,9 +53,10 @@ func run() error {
 	}
 
 	s := api.Api{
-		Router:      chi.NewMux(),
-		UserService: services.NewUserService(pool),
-		Jwt:         jwtCfg,
+		Router:        chi.NewMux(),
+		UserService:   services.NewUserService(pool),
+		FriendService: services.NewFriendService(pool),
+		Jwt:           jwtCfg,
 	}
 
 	s.BindRoutes()

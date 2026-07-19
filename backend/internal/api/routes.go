@@ -36,6 +36,20 @@ func (api *Api) BindRoutes() {
 					r.Get("/me", api.handleGetCurrentUser)
 				})
 			})
+
+			r.Route("/friends", func(r chi.Router) {
+				r.Use(api.AuthMiddleware)
+
+				r.Route("/invites", func(r chi.Router) {
+					r.Post("/", api.handleCreateInvite)
+					r.Get("/", api.handleListPendingInvites)
+					r.Post("/{invite_id}/accept", api.handleAcceptInvite)
+					r.Post("/{invite_id}/reject", api.handleRejectInvite)
+				})
+
+				r.Get("/", api.handleListFriends)
+				r.Delete("/{chat_id}", api.handleRemoveFriend)
+			})
 		})
 	})
 }

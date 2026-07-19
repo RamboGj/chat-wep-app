@@ -8,7 +8,29 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type Chat struct {
+	ID        uuid.UUID   `json:"id"`
+	Title     pgtype.Text `json:"title"`
+	CreatedAt time.Time   `json:"created_at"`
+	DeletedAt *time.Time  `json:"deleted_at"`
+}
+
+type ChatParticipant struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+	ChatID uuid.UUID `json:"chat_id"`
+}
+
+type FriendInvitation struct {
+	ID         uuid.UUID  `json:"id"`
+	FromUserID uuid.UUID  `json:"from_user_id"`
+	ToUserID   uuid.UUID  `json:"to_user_id"`
+	AcceptedAt *time.Time `json:"accepted_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
 
 type User struct {
 	ID           uuid.UUID  `json:"id"`

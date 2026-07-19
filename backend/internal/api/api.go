@@ -8,7 +8,8 @@ import (
 )
 
 type Api struct {
-	Router      *chi.Mux
-	UserService services.UserService
-	Jwt         jwtutils.Config
+	Router        *chi.Mux
+	UserService   services.UserService
+	FriendService services.FriendService
+	Jwt           jwtutils.Config
 }
