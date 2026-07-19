@@ -50,6 +50,17 @@ func (api *Api) BindRoutes() {
 				r.Get("/", api.handleListFriends)
 				r.Delete("/{chat_id}", api.handleRemoveFriend)
 			})
+
+			r.Route("/chats", func(r chi.Router) {
+				r.Use(api.AuthMiddleware)
+
+				r.Get("/", api.handleListChats)
+				r.Get("/{chat_id}/messages", api.handleListMessages)
+			})
+
+			// The browser sends the access_token cookie on the upgrade request,
+			// so the socket needs no bespoke auth of its own.
+			r.With(api.AuthMiddleware).Get("/ws", api.handleWS)
 		})
 	})
 }

@@ -7,8 +7,10 @@ package pgstore
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addChatParticipant = `-- name: AddChatParticipant :exec
@@ -24,6 +26,33 @@ type AddChatParticipantParams struct {
 func (q *Queries) AddChatParticipant(ctx context.Context, arg AddChatParticipantParams) error {
 	_, err := q.db.Exec(ctx, addChatParticipant, arg.ChatID, arg.UserID)
 	return err
+}
+
+const chatParticipantIDs = `-- name: ChatParticipantIDs :many
+SELECT user_id
+FROM chat_participants
+WHERE chat_id = $1
+`
+
+// Fan-out targets for a chat: everyone in it, sender included.
+func (q *Queries) ChatParticipantIDs(ctx context.Context, chatID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, chatParticipantIDs, chatID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const createChat = `-- name: CreateChat :one
@@ -93,6 +122,67 @@ func (q *Queries) IsChatParticipant(ctx context.Context, arg IsChatParticipantPa
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const listChatsForUser = `-- name: ListChatsForUser :many
+SELECT c.id AS chat_id,
+       u.id AS other_user_id,
+       u.username AS other_username,
+       last.content AS last_message,
+       last.sent_at AS last_message_at
+FROM chat_participants self
+JOIN chats c ON c.id = self.chat_id
+JOIN chat_participants other
+  ON other.chat_id = self.chat_id AND other.user_id <> self.user_id
+JOIN users u ON u.id = other.user_id
+LEFT JOIN messages last ON last.id = (
+    SELECT m.id
+    FROM messages m
+    WHERE m.chat_id = c.id
+    ORDER BY m.sent_at DESC
+    LIMIT 1
+)
+WHERE self.user_id = $1
+  AND c.deleted_at IS NULL
+ORDER BY COALESCE(last.sent_at, c.created_at) DESC
+`
+
+type ListChatsForUserRow struct {
+	ChatID        uuid.UUID   `json:"chat_id"`
+	OtherUserID   uuid.UUID   `json:"other_user_id"`
+	OtherUsername string      `json:"other_username"`
+	LastMessage   pgtype.Text `json:"last_message"`
+	LastMessageAt *time.Time  `json:"last_message_at"`
+}
+
+// The caller's chats with the other participant and a last-message preview.
+// The preview is a plain LEFT JOIN (not a LATERAL) so that sqlc infers the
+// preview columns as nullable: a chat with no messages yet still appears, with
+// last_message/last_message_at NULL.
+func (q *Queries) ListChatsForUser(ctx context.Context, userID uuid.UUID) ([]ListChatsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listChatsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListChatsForUserRow
+	for rows.Next() {
+		var i ListChatsForUserRow
+		if err := rows.Scan(
+			&i.ChatID,
+			&i.OtherUserID,
+			&i.OtherUsername,
+			&i.LastMessage,
+			&i.LastMessageAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listFriends = `-- name: ListFriends :many

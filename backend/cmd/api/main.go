@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"backend/internal/api"
@@ -12,6 +13,7 @@ import (
 	"backend/internal/services"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
@@ -52,11 +54,20 @@ func run() error {
 		return err
 	}
 
+	chatService := services.NewChatService(pool)
+	messageService := services.NewMessageService(pool)
+
+	hub := api.NewHub(chatService, messageService)
+	go hub.Run()
+
 	s := api.Api{
 		Router:        chi.NewMux(),
 		UserService:   services.NewUserService(pool),
 		FriendService: services.NewFriendService(pool),
+		ChatService:   chatService,
 		Jwt:           jwtCfg,
+		Hub:           hub,
+		WsUpgrader:    wsUpgrader(),
 	}
 
 	s.BindRoutes()
@@ -69,6 +80,36 @@ func run() error {
 	}
 
 	return nil
+}
+
+// wsUpgrader builds the upgrader. Because the socket authenticates with a
+// cookie, Origin must be checked or any site could open an authenticated socket
+// on the user's behalf. Leaving CHATAPP_ALLOWED_ORIGINS unset keeps gorilla's
+// same-origin default; set it to the frontend's origin when it is served
+// separately.
+func wsUpgrader() websocket.Upgrader {
+	raw := os.Getenv("CHATAPP_ALLOWED_ORIGINS")
+	if raw == "" {
+		return websocket.Upgrader{}
+	}
+
+	allowed := make(map[string]struct{})
+	for _, origin := range strings.Split(raw, ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			allowed[origin] = struct{}{}
+		}
+	}
+
+	return websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true // non-browser client: no cross-site risk to guard
+			}
+			_, ok := allowed[origin]
+			return ok
+		},
+	}
 }
 
 func jwtConfigFromEnv() (jwtutils.Config, error) {

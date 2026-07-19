@@ -32,6 +32,14 @@ type FriendInvitation struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
+type Message struct {
+	ID       uuid.UUID `json:"id"`
+	ChatID   uuid.UUID `json:"chat_id"`
+	SenderID uuid.UUID `json:"sender_id"`
+	Content  string    `json:"content"`
+	SentAt   time.Time `json:"sent_at"`
+}
+
 type User struct {
 	ID           uuid.UUID  `json:"id"`
 	Username     string     `json:"username"`
