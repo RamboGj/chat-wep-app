@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="336" height="96" viewBox="0 0 336 96" role="img" aria-label="Pulse mark: gradient, outline and light treatments">
+  <defs>
+    <linearGradient id="tileFill" x1="0" y1="0" x2="96" y2="96" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6c5ce7"/>
+      <stop offset="1" stop-color="#8b7cf6"/>
+    </linearGradient>
+    <linearGradient id="glyphFill" x1="132" y1="24" x2="204" y2="72" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6c5ce7"/>
+      <stop offset="1" stop-color="#8b7cf6"/>
+    </linearGradient>
+    <path id="bubble"
+      d="M12 3C7.03 3 3 6.58 3 11c0 2.39 1.19 4.53 3.08 6.02-.1.98-.42 2.28-1.18 3.48-.1.16.03.36.22.33 1.94-.28 3.36-1.05 4.24-1.65.86.22 1.77.32 2.64.32 4.97 0 9-3.58 9-8s-4.03-8-9-8z"/>
+  </defs>
+
+  <!-- gradient: the primary treatment -->
+  <rect width="96" height="96" rx="28.8" fill="url(#tileFill)"/>
+  <use href="#bubble" transform="translate(24 24) scale(2)" fill="#fff"/>
+
+  <!-- outline: dark surface, gradient carried by the glyph -->
+  <rect x="120" width="96" height="96" rx="28.8" fill="#10151c" stroke="rgba(255,255,255,0.08)"/>
+  <use href="#bubble" transform="translate(144 24) scale(2)" fill="url(#glyphFill)"/>
+
+  <!-- light: for light surfaces -->
+  <rect x="240" width="96" height="96" rx="28.8" fill="#eef1f5"/>
+  <use href="#bubble" transform="translate(264 24) scale(2)" fill="#6c5ce7"/>
+</svg>
