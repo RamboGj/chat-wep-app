@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    ports:
+      - ${CHATAPP_DATABASE_PORT:-5432}:5432
+    environment:
+      - POSTGRES_USER=${CHATAPP_DATABASE_USER}
+      - POSTGRES_PASSWORD=${CHATAPP_DATABASE_PASSWORD}
+      - POSTGRES_DB=${CHATAPP_DATABASE_NAME}
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CHATAPP_DATABASE_USER} -d ${CHATAPP_DATABASE_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db:
+    driver: local

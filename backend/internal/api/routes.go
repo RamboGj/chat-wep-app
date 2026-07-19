@@ -1,0 +1,41 @@
+package api
+
+import (
+	"net/http"
+
+	"backend/internal/jsonutils"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+)
+
+func (api *Api) BindRoutes() {
+	api.Router.Use(middleware.RequestID)
+	api.Router.Use(middleware.Recoverer)
+	api.Router.Use(middleware.Logger)
+
+	api.Router.Route("/api", func(r chi.Router) {
+		r.Route("/v1", func(r chi.Router) {
+			r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+				_ = jsonutils.EncodeJson(w, r, http.StatusOK, map[string]any{"status": "ok"})
+			})
+
+			r.Route("/auth", func(r chi.Router) {
+				r.Post("/signup", api.handleSignupUser)
+				r.Post("/login", api.handleLoginUser)
+
+				// Authenticated by the refresh cookie itself, not AuthMiddleware.
+				r.Post("/refresh", api.handleRefreshToken)
+
+				// Clearing cookies must work even with an expired access token,
+				// so logout stays outside AuthMiddleware.
+				r.Post("/logout", api.handleLogoutUser)
+
+				r.Group(func(r chi.Router) {
+					r.Use(api.AuthMiddleware)
+					r.Get("/me", api.handleGetCurrentUser)
+				})
+			})
+		})
+	})
+}
