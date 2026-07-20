@@ -31,6 +31,14 @@ type InviteView struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// AcceptedInvite is the outcome of accepting an invitation. InviterID is
+// returned so the caller can push the new chat to the inviter, who has no other
+// way to learn about it.
+type AcceptedInvite struct {
+	ChatID    uuid.UUID
+	InviterID uuid.UUID
+}
+
 // FriendView is one of the caller's 1:1 chats, described by the other participant.
 type FriendView struct {
 	ChatID   uuid.UUID `json:"chat_id"`
@@ -123,10 +131,10 @@ func (fs *FriendService) ListPendingInvites(ctx context.Context, toID uuid.UUID)
 // AcceptInvite creates the chat, both participant rows and marks the invite
 // accepted in a single transaction, so there is never a chat without its
 // participants.
-func (fs *FriendService) AcceptInvite(ctx context.Context, inviteID, callerID uuid.UUID) (uuid.UUID, error) {
+func (fs *FriendService) AcceptInvite(ctx context.Context, inviteID, callerID uuid.UUID) (AcceptedInvite, error) {
 	tx, err := fs.pool.Begin(ctx)
 	if err != nil {
-		return uuid.UUID{}, err
+		return AcceptedInvite{}, err
 	}
 	defer tx.Rollback(ctx) // no-op after a successful Commit
 
@@ -135,20 +143,20 @@ func (fs *FriendService) AcceptInvite(ctx context.Context, inviteID, callerID uu
 	invite, err := q.GetInviteByID(ctx, inviteID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return uuid.UUID{}, ErrInviteNotFound
+			return AcceptedInvite{}, ErrInviteNotFound
 		}
-		return uuid.UUID{}, err
+		return AcceptedInvite{}, err
 	}
 	if invite.ToUserID != callerID {
-		return uuid.UUID{}, ErrNotInviteRecipient
+		return AcceptedInvite{}, ErrNotInviteRecipient
 	}
 	if invite.AcceptedAt != nil {
-		return uuid.UUID{}, ErrInviteAlreadyResolved
+		return AcceptedInvite{}, ErrInviteAlreadyResolved
 	}
 
 	chatID, err := q.CreateChat(ctx)
 	if err != nil {
-		return uuid.UUID{}, err
+		return AcceptedInvite{}, err
 	}
 
 	for _, userID := range []uuid.UUID{invite.FromUserID, invite.ToUserID} {
@@ -156,19 +164,19 @@ func (fs *FriendService) AcceptInvite(ctx context.Context, inviteID, callerID uu
 			ChatID: chatID,
 			UserID: userID,
 		}); err != nil {
-			return uuid.UUID{}, err
+			return AcceptedInvite{}, err
 		}
 	}
 
 	if err := q.MarkInviteAccepted(ctx, inviteID); err != nil {
-		return uuid.UUID{}, err
+		return AcceptedInvite{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return uuid.UUID{}, err
+		return AcceptedInvite{}, err
 	}
 
-	return chatID, nil
+	return AcceptedInvite{ChatID: chatID, InviterID: invite.FromUserID}, nil
 }
 
 func (fs *FriendService) RejectInvite(ctx context.Context, inviteID, callerID uuid.UUID) error {

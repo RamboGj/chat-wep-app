@@ -47,7 +47,7 @@ export function ChatSidebar({
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-2">
+      <div className="scroll-surface flex-1 overflow-y-auto px-2 pb-2">
         <InvitesPanel />
 
         {isLoading ? (

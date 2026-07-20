@@ -61,7 +61,7 @@ export function MessageComposer({ onSend, status }: MessageComposerProps) {
           resize()
         }}
         onKeyDown={handleKeyDown}
-        className="max-h-30 min-w-0 flex-1 resize-none rounded-[14px] border border-white-08 bg-gray-600 px-4 py-3 font-manrope text-base text-gray-100 placeholder:text-gray-300 focus:border-brand-500 focus:outline-none disabled:opacity-60 md:text-sm"
+        className="scroll-surface max-h-30 min-w-0 flex-1 resize-none rounded-2xl bg-gray-600 px-4 py-3 font-manrope text-base text-gray-100 ring-1 ring-gray-500 transition-all duration-500 placeholder:font-manrope placeholder:text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-60 disabled:hover:bg-gray-600 md:text-sm"
       />
 
       <button

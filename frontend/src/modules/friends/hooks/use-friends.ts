@@ -6,7 +6,7 @@ import { friendsApi } from '../api/friends-api'
  * Invitations have no realtime channel — the socket only carries chat messages
  * — so incoming invites are polled.
  */
-const INVITE_POLL_INTERVAL = 20_000
+const INVITE_POLL_INTERVAL = 5_000
 
 export function useFriends() {
   return useQuery({

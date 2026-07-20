@@ -53,12 +53,13 @@ CreateInvite(ctx, fromID uuid.UUID, toUsername string) (uuid.UUID, error)
 
 ListPendingInvites(ctx, toID uuid.UUID) ([]InviteView, error)   // accepted_at IS NULL
 
-AcceptInvite(ctx, inviteID, callerID uuid.UUID) (uuid.UUID, error)   // TRANSACTION
+AcceptInvite(ctx, inviteID, callerID uuid.UUID) (AcceptedInvite, error)   // TRANSACTION
     - load invite; not found → ErrInviteNotFound
     - invite.to_user_id != callerID → ErrNotInviteRecipient
     - invite.accepted_at != NULL → ErrInviteAlreadyResolved
     - CreateChat → AddChatParticipant(from) → AddChatParticipant(to) → MarkInviteAccepted
-    - returns new chat id
+    - returns {ChatID, InviterID}; the handler pushes KindChatCreated to the
+      inviter over the hub, who otherwise never learns the chat exists
 
 RejectInvite(ctx, inviteID, callerID uuid.UUID) error
     - load + authorize recipient; DeleteInvite

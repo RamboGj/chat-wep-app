@@ -33,7 +33,7 @@ export function MessageList({ messages, currentUserId, isLoading }: MessageListP
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-4 md:p-6">
+    <div className="scroll-surface flex flex-1 flex-col gap-2.5 overflow-y-auto p-4 md:p-6">
       {messages.map((message) => {
         const mine = message.sender_id === currentUserId
 

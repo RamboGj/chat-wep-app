@@ -70,8 +70,9 @@ export function useChatRealtime(options: { enabled: boolean; onError?: (message:
           .sort(byRecency)
       })
 
-      // A message for a chat we have never seen means the sidebar is stale —
-      // most likely an invite of ours was just accepted.
+      // Backstop for a chat we have never seen: the ChatCreated push normally
+      // gets there first, but it is dropped if we were offline when the invite
+      // was accepted.
       if (!known) {
         queryClient.invalidateQueries({ queryKey: queryKeys.chats })
       }
@@ -79,9 +80,17 @@ export function useChatRealtime(options: { enabled: boolean; onError?: (message:
     [queryClient],
   )
 
+  // Our invite was accepted: the chat exists now, and the other user is a
+  // friend, but neither list has any reason to refetch on its own.
+  const applyChatCreated = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.chats })
+    queryClient.invalidateQueries({ queryKey: queryKeys.friends })
+  }, [queryClient])
+
   return useChatSocket({
     enabled: options.enabled,
     onNewMessage: applyMessage,
+    onChatCreated: applyChatCreated,
     onError: options.onError,
   })
 }

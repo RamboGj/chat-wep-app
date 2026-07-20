@@ -7,6 +7,7 @@ export const WSKind = {
   NewMessage: 1,
   Error: 2,
   InvalidJSON: 3,
+  ChatCreated: 4,
 } as const
 
 export interface WSMessage {
@@ -42,6 +43,8 @@ interface UseChatSocketOptions {
   /** Gate the connection on being authenticated. */
   enabled: boolean
   onNewMessage: (message: Message) => void
+  /** An invite we sent was accepted; the chat list has a new entry. */
+  onChatCreated?: () => void
   onError?: (message: string) => void
 }
 
@@ -50,17 +53,22 @@ interface UseChatSocketOptions {
  * over it and fans out by chat_id, so there is nothing to open or close when
  * the user switches conversations.
  */
-export function useChatSocket({ enabled, onNewMessage, onError }: UseChatSocketOptions) {
+export function useChatSocket({
+  enabled,
+  onNewMessage,
+  onChatCreated,
+  onError,
+}: UseChatSocketOptions) {
   const [status, setStatus] = useState<SocketStatus>('closed')
 
   const socketRef = useRef<WebSocket | null>(null)
 
   // Handlers are read through a ref so a new callback identity on every render
   // never tears the socket down.
-  const handlers = useRef({ onNewMessage, onError })
+  const handlers = useRef({ onNewMessage, onChatCreated, onError })
   useEffect(() => {
-    handlers.current = { onNewMessage, onError }
-  }, [onNewMessage, onError])
+    handlers.current = { onNewMessage, onChatCreated, onError }
+  }, [onNewMessage, onChatCreated, onError])
 
   useEffect(() => {
     if (!enabled) return
@@ -107,6 +115,10 @@ export function useChatSocket({ enabled, onNewMessage, onError }: UseChatSocketO
               content: payload.content ?? '',
               sent_at: payload.sent_at ?? new Date().toISOString(),
             })
+            break
+
+          case WSKind.ChatCreated:
+            handlers.current.onChatCreated?.()
             break
 
           case WSKind.Error:

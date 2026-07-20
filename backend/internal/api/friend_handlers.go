@@ -50,13 +50,21 @@ func (api *Api) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 
 	callerID := userIDFromContext(r.Context())
 
-	chatID, err := api.FriendService.AcceptInvite(r.Context(), inviteID, callerID)
+	accepted, err := api.FriendService.AcceptInvite(r.Context(), inviteID, callerID)
 	if err != nil {
 		api.respondFriendError(w, r, err)
 		return
 	}
 
-	_ = jsonutils.EncodeJson(w, r, http.StatusCreated, map[string]any{"chat_id": chatID})
+	// The accepter refreshes off this response, but the inviter is passive —
+	// without this push their sidebar stays stale until something else refetches
+	// it. Best-effort: if they are offline the chat is in their next list call.
+	api.Hub.NotifyUser(r.Context(), accepted.InviterID, WSMessage{
+		Kind:   KindChatCreated,
+		ChatID: accepted.ChatID,
+	})
+
+	_ = jsonutils.EncodeJson(w, r, http.StatusCreated, map[string]any{"chat_id": accepted.ChatID})
 }
 
 func (api *Api) handleRejectInvite(w http.ResponseWriter, r *http.Request) {

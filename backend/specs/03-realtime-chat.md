@@ -28,7 +28,9 @@ Server → client (`kind: 1` new message):
 Server → client errors: `{ "kind": 2, "message": "..." }` (e.g. not a participant),
 `{ "kind": 3, "message": "this message should be a valid json" }`.
 
-`MessageKind`: `0 KindSendMessage`, `1 KindNewMessage`, `2 KindError`, `3 KindInvalidJSON`.
+`MessageKind`: `0 KindSendMessage`, `1 KindNewMessage`, `2 KindError`, `3 KindInvalidJSON`,
+`4 KindChatCreated` (server → inviter, carries only `chat_id`; queued from the accept-invite
+handler via `Hub.NotifyUser`, not from a client frame).
 **`sender_id` is server-authoritative** — taken from the authenticated socket, never trusted
 from the payload.
 

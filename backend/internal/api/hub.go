@@ -19,6 +19,7 @@ const (
 	KindNewMessage                     // server → participants: the persisted message
 	KindError                          // server → sender
 	KindInvalidJSON                    // server → sender
+	KindChatCreated                    // server → inviter: an invite of theirs was accepted
 )
 
 // WSMessage is the single envelope in both directions.
@@ -43,6 +44,14 @@ type Inbound struct {
 	Msg      WSMessage
 }
 
+// Notification is a server-originated push aimed at one user, queued by code
+// outside the hub goroutine (HTTP handlers). Clients is owned by Run, so those
+// callers must go through the channel rather than touching the map.
+type Notification struct {
+	UserID uuid.UUID
+	Msg    WSMessage
+}
+
 // hubDBTimeout bounds the DB work done on the hub goroutine: every message in
 // the process is serialized through it, so a hung query must not wedge the hub.
 const hubDBTimeout = 5 * time.Second
@@ -53,6 +62,7 @@ type Hub struct {
 	Register   chan *Client
 	Unregister chan *Client
 	Inbound    chan Inbound
+	Notify     chan Notification
 	Clients    map[uuid.UUID]*Client
 
 	chatService    services.ChatService
@@ -64,6 +74,7 @@ func NewHub(chatService services.ChatService, messageService services.MessageSer
 		Register:       make(chan *Client),
 		Unregister:     make(chan *Client),
 		Inbound:        make(chan Inbound),
+		Notify:         make(chan Notification),
 		Clients:        make(map[uuid.UUID]*Client),
 		chatService:    chatService,
 		messageService: messageService,
@@ -90,7 +101,22 @@ func (h *Hub) Run() {
 
 		case in := <-h.Inbound:
 			h.handleInbound(in)
+
+		case n := <-h.Notify:
+			h.sendTo(n.UserID, n.Msg)
 		}
+	}
+}
+
+// NotifyUser queues a push for userID. Safe to call from any goroutine, unlike
+// sendTo. A user with no live socket is a no-op: they pick the change up from
+// the REST endpoints on their next fetch, so this is best-effort by design.
+func (h *Hub) NotifyUser(ctx context.Context, userID uuid.UUID, m WSMessage) {
+	select {
+	case h.Notify <- Notification{UserID: userID, Msg: m}:
+	case <-ctx.Done():
+		// Request cancelled or the hub is wedged; drop the push rather than
+		// pin the handler goroutine to it.
 	}
 }
 
