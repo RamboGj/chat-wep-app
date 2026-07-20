@@ -1,17 +1,20 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 
 	"github.com/joho/godotenv"
 )
 
-// terndotenv loads .env and then shells out to `tern migrate`, so tern.conf's
-// {{env "CHATAPP_*"}} placeholders resolve without exporting anything.
+// terndotenv loads .env when present and then shells out to `tern migrate`, so
+// tern.conf's {{env "CHATAPP_*"}} placeholders resolve without exporting
+// anything. With no .env the vars are expected to come from the environment.
 func main() {
-	if err := godotenv.Load(); err != nil {
+	if err := godotenv.Load(); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		fmt.Fprintf(os.Stderr, "failed to load .env: %v\n", err)
 		os.Exit(1)
 	}

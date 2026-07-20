@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"strings"
@@ -26,7 +28,9 @@ func main() {
 }
 
 func run() error {
-	if err := godotenv.Load(); err != nil {
+	// .env is a local-dev convenience. In deployed environments the vars come
+	// from the platform and no file exists, which is not an error.
+	if err := godotenv.Load(); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("failed to load .env: %w", err)
 	}
 
