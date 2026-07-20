@@ -1,11 +1,24 @@
+/** Every route the Go API serves lives under this prefix. */
+const API_PREFIX = '/api/v1'
+
 /**
- * Where the Go API lives. Unset means same-origin `/api/v1`, which is what the
- * dev proxy and a co-hosted deployment both serve. Point it at an absolute
- * origin (`https://api.example.com/api/v1`) when the API is on its own host —
- * that host then needs CORS with credentials, since the auth cookies stop being
- * same-origin.
+ * Where the Go API lives. Set `VITE_API_BASE_URL` to the API's *origin* only
+ * (`https://api.example.com`) when it runs on its own host — the prefix above is
+ * appended here, so it must not be repeated in the variable. Unset means
+ * same-origin, which is what the dev proxy and a co-hosted deployment serve.
+ *
+ * A cross-origin API needs CORS with credentials, since the auth cookies stop
+ * being same-origin.
+ *
+ * Note this is inlined at build time: changing it in the host's dashboard has no
+ * effect until the frontend is rebuilt.
  */
-export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '/api/v1').replace(/\/$/, '')
+export const API_BASE =
+  (import.meta.env.VITE_API_BASE_URL ?? '')
+    .replace(/\/+$/, '')
+    // Tolerate the prefix being included anyway, rather than silently 404ing on
+    // a doubled `/api/v1/api/v1`.
+    .replace(new RegExp(`${API_PREFIX}$`), '') + API_PREFIX
 
 /**
  * A non-2xx response from the API. `fields` carries the per-field messages the

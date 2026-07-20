@@ -2,8 +2,9 @@
 
 interface ImportMetaEnv {
   /**
-   * Base URL of the Go API, including the version prefix. Optional — defaults
-   * to the same-origin `/api/v1` that the dev proxy serves.
+   * Origin of the Go API, *without* the `/api/v1` prefix — that is appended in
+   * `lib/api.ts`. Optional; unset means same-origin, which is what the dev
+   * proxy serves.
    */
   readonly VITE_API_BASE_URL?: string
 }
