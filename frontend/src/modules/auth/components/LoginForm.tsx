@@ -12,7 +12,6 @@ import {
 import { useLogin } from '../hooks/use-auth'
 
 interface LoginFormProps extends ComponentProps<'form'> {
-  /** Prefilled after signing up, so the new account only types its password. */
   defaultEmail?: string
   notice?: string
 }
@@ -30,7 +29,7 @@ export function LoginForm({ defaultEmail = '', notice, ...rest }: LoginFormProps
     }
   }
 
-  function submit() {
+  async function submit() {
     const parsed = ZLoginSchema.safeParse(values)
     if (!parsed.success) {
       setErrors(zodFieldErrors(parsed.error))
@@ -38,10 +37,12 @@ export function LoginForm({ defaultEmail = '', notice, ...rest }: LoginFormProps
     }
 
     setErrors({})
-    login.mutate(parsed.data, {
-      onSuccess: () => navigate({ to: '/' }),
-      onError: (error) => setErrors(requestFieldErrors(error)),
-    })
+    try {
+      await login.mutateAsync(parsed.data)
+      navigate({ to: '/' }) 
+    } catch (error) {
+      setErrors(requestFieldErrors(error))
+    }
   }
 
   return (
