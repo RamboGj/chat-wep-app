@@ -10,6 +10,8 @@ interface ChatSidebarProps {
   search: string
   onSearchChange: (value: string) => void
   isLoading: boolean
+  /** Controls the pane's visibility across breakpoints; owned by the page. */
+  className?: string
 }
 
 export function ChatSidebar({
@@ -19,6 +21,7 @@ export function ChatSidebar({
   search,
   onSearchChange,
   isLoading,
+  className = '',
 }: ChatSidebarProps) {
   const query = search.trim().toLowerCase()
   const filtered = query
@@ -26,7 +29,9 @@ export function ChatSidebar({
     : chats
 
   return (
-    <aside className="flex w-85 min-w-85 flex-col border-r border-white-08 bg-gray-800">
+    <aside
+      className={`w-full min-w-0 flex-col bg-gray-800 md:w-72 md:min-w-72 md:border-r md:border-white-08 lg:w-85 lg:min-w-85 ${className}`}
+    >
       <div className="p-4">
         <label className="sr-only" htmlFor="search_chats_input">
           Search chats
@@ -38,7 +43,7 @@ export function ChatSidebar({
           placeholder="Search chats"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
-          className="w-full rounded-[10px] border border-white-08 bg-gray-600 px-3.5 py-2.5 font-manrope text-sm text-gray-100 placeholder:text-gray-300 focus:border-brand-500 focus:outline-none"
+          className="w-full rounded-[10px] border border-white-08 bg-gray-600 px-3.5 py-2.5 font-manrope text-base text-gray-100 placeholder:text-gray-300 focus:border-brand-500 focus:outline-none md:text-sm"
         />
       </div>
 

@@ -51,16 +51,21 @@ export function AuthPage() {
     [AuthTab.SIGNUP, <SignupForm onCreated={handleCreated} />],
   ])
 
+  // The tabs are flex-sized, so the indicator has to be re-measured whenever
+  // the row's width changes — not only when the active tab does.
   useEffect(() => {
     const activeIndex = TABS.findIndex((tab) => tab.value === currentTab)
     const el = tabsRef.current[activeIndex]
+    if (!el) return
 
-    if (el) {
-      setIndicatorStyle({
-        width: el.offsetWidth,
-        x: el.offsetLeft,
-      })
-    }
+    const measure = () =>
+      setIndicatorStyle({ width: el.offsetWidth, x: el.offsetLeft })
+
+    measure()
+
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [currentTab])
 
   return (
@@ -83,7 +88,7 @@ export function AuthPage() {
         }}
       />
 
-      <div className="relative bg-gray-800 mx-auto max-w-xl my-24 border border-white-08 rounded-xl p-10">
+      <div className="relative bg-gray-800 mx-4 sm:mx-auto max-w-xl my-10 sm:my-16 md:my-24 border border-white-08 rounded-xl p-6 sm:p-8 md:p-10">
         <Logo size="md" className="mb-8" />
 
         <div className="flex p-0.5 rounded-lg relative">
@@ -95,7 +100,7 @@ export function AuthPage() {
                 ref={(el) => {
                   tabsRef.current[index] = el
                 }}
-                className="w-90"
+                className="flex-1"
                 active={isActive}
                 value={tab.value}
                 title={tab.title}

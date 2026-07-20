@@ -43,10 +43,12 @@ export function MessageComposer({ onSend, status }: MessageComposerProps) {
   }
 
   return (
-    <div className="flex items-end gap-3 border-t border-white-08 bg-gray-700 px-6 py-4">
+    <div className="flex items-end gap-2 border-t border-white-08 bg-gray-700 px-4 py-3 md:gap-3 md:px-6 md:py-4">
       <label className="sr-only" htmlFor="message_input">
         Type a message
       </label>
+      {/* text-base below md: iOS Safari zooms the viewport on focus for
+          anything under 16px. */}
       <textarea
         ref={textareaRef}
         id="message_input"
@@ -59,7 +61,7 @@ export function MessageComposer({ onSend, status }: MessageComposerProps) {
           resize()
         }}
         onKeyDown={handleKeyDown}
-        className="max-h-30 flex-1 resize-none rounded-[14px] border border-white-08 bg-gray-600 px-4 py-3 font-manrope text-sm text-gray-100 placeholder:text-gray-300 focus:border-brand-500 focus:outline-none disabled:opacity-60"
+        className="max-h-30 min-w-0 flex-1 resize-none rounded-[14px] border border-white-08 bg-gray-600 px-4 py-3 font-manrope text-base text-gray-100 placeholder:text-gray-300 focus:border-brand-500 focus:outline-none disabled:opacity-60 md:text-sm"
       />
 
       <button

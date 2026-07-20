@@ -53,7 +53,7 @@ export function NewChatDialog({ onClose }: NewChatDialogProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
       onClick={onClose}
       role="presentation"
     >
@@ -66,7 +66,7 @@ export function NewChatDialog({ onClose }: NewChatDialogProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-chat-title"
-        className="w-90 flex flex-col gap-4 rounded-2xl border border-white-10 bg-gray-700 p-7 animate-showContent"
+        className="w-full max-w-90 flex flex-col gap-4 rounded-2xl border border-white-10 bg-gray-700 p-5 sm:p-7 animate-showContent"
       >
         <h2
           id="new-chat-title"

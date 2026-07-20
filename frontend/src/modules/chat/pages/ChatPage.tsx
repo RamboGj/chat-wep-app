@@ -82,47 +82,59 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-gray-900 text-gray-100">
-      <header className="flex h-16 min-h-16 items-center justify-between border-b border-white-08 bg-gray-700 px-6">
-        <div className="flex items-center gap-3">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-gray-900 text-gray-100">
+      <header className="flex h-16 min-h-16 items-center justify-between gap-3 border-b border-white-08 bg-gray-700 px-4 md:px-6">
+        <div className="flex min-w-0 items-center gap-3">
           <Avatar
             name={user?.username ?? '?'}
             size="sm"
             ringColor="var(--color-gray-700)"
           />
-          <div>
-            <p className="font-sora text-[15px] font-bold leading-tight">
+          <div className="min-w-0">
+            <p className="truncate font-sora text-[15px] font-bold leading-tight">
               {user?.username ?? '…'}
             </p>
             <p className="font-manrope text-xs text-gray-300">Pulse Messenger</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <span
-            className="font-manrope text-xs text-gray-300"
-            aria-live="polite"
-          >
-            {status === 'open'
-              ? 'Connected'
-              : status === 'connecting'
-                ? 'Connecting…'
-                : 'Offline'}
+        <div className="flex shrink-0 items-center gap-2 md:gap-2.5">
+          {/* Below sm the label collapses to its dot, so the status stays
+              visible without crowding the actions off the header. */}
+          <span className="flex items-center gap-2" aria-live="polite">
+            <span
+              aria-hidden
+              className={`size-2 shrink-0 rounded-full ${
+                status === 'open'
+                  ? 'bg-success-500'
+                  : status === 'connecting'
+                    ? 'bg-brand-400'
+                    : 'bg-error-500'
+              }`}
+            />
+            <span className="sr-only sm:not-sr-only font-manrope text-xs text-gray-300">
+              {status === 'open'
+                ? 'Connected'
+                : status === 'connecting'
+                  ? 'Connecting…'
+                  : 'Offline'}
+            </span>
           </span>
 
           <button
             type="button"
             onClick={() => setShowNewChat(true)}
-            className="flex cursor-pointer items-center gap-2 rounded-[10px] bg-[linear-gradient(135deg,var(--color-brand-500),var(--color-brand-400))] px-4 py-2.5 font-sora text-[13px] font-semibold text-white transition-[filter] duration-200 hover:brightness-110"
+            className="flex cursor-pointer items-center gap-2 rounded-[10px] bg-[linear-gradient(135deg,var(--color-brand-500),var(--color-brand-400))] px-3 py-2.5 font-sora text-[13px] font-semibold text-white transition-[filter] duration-200 hover:brightness-110 sm:px-4"
           >
-            <span className="text-base leading-none">+</span> New chat
+            <span className="text-base leading-none">+</span>
+            <span className="sr-only sm:not-sr-only">New chat</span>
           </button>
 
           <button
             type="button"
             onClick={handleLogout}
             disabled={logout.isPending}
-            className="cursor-pointer rounded-[10px] border border-white-12 px-3.5 py-2.5 font-manrope text-[13px] text-gray-300 transition-colors duration-200 hover:border-white-25 hover:text-gray-100 disabled:opacity-50"
+            className="cursor-pointer rounded-[10px] border border-white-12 px-3 py-2.5 font-manrope text-[13px] text-gray-300 transition-colors duration-200 hover:border-white-25 hover:text-gray-100 disabled:opacity-50 md:px-3.5"
           >
             Log out
           </button>
@@ -132,12 +144,15 @@ export function ChatPage() {
       {socketError && (
         <p
           role="alert"
-          className="border-b border-white-08 bg-error-500/15 px-6 py-2 font-manrope text-sm text-error-500"
+          className="border-b border-white-08 bg-error-500/15 px-4 py-2 font-manrope text-sm text-error-500 md:px-6"
         >
           {socketError}
         </p>
       )}
 
+      {/* Below md there is only room for one pane, so the selection doubles as
+          navigation: the list is the screen until a chat is open. From md up
+          both panes are always mounted side by side. */}
       <div className="flex flex-1 overflow-hidden">
         <ChatSidebar
           chats={chats}
@@ -146,18 +161,45 @@ export function ChatPage() {
           search={search}
           onSearchChange={setSearch}
           isLoading={chatsLoading}
+          className={activeChatId ? 'hidden md:flex' : 'flex'}
         />
 
-        <main className="flex min-w-0 flex-1 flex-col bg-gray-900">
+        <main
+          className={`min-w-0 flex-1 flex-col bg-gray-900 ${
+            activeChatId ? 'flex' : 'hidden md:flex'
+          }`}
+        >
           {selectedChat && user ? (
             <>
-              <header className="flex h-18 min-h-18 items-center gap-3 border-b border-white-08 bg-gray-700 px-6">
+              <header className="flex h-18 min-h-18 items-center gap-3 border-b border-white-08 bg-gray-700 px-4 md:px-6">
+                {/* Only pane on small screens, so it carries its own way back. */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedChatId(null)}
+                  aria-label="Back to chats"
+                  className="-ml-1 flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-gray-300 transition-colors duration-200 hover:bg-white-08 hover:text-gray-100 md:hidden"
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M15 18l-6-6 6-6" />
+                  </svg>
+                </button>
+
                 <Avatar
                   name={selectedChat.other_username}
                   ringColor="var(--color-gray-700)"
                 />
-                <div className="flex-1">
-                  <p className="font-sora text-[15px] font-bold">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-sora text-[15px] font-bold">
                     {selectedChat.other_username}
                   </p>
                   <p className="font-manrope text-xs text-gray-300">
@@ -169,9 +211,9 @@ export function ChatPage() {
                   type="button"
                   onClick={handleRemoveFriend}
                   disabled={removeFriend.isPending}
-                  className="cursor-pointer rounded-[10px] border border-white-12 px-3 py-2 font-manrope text-xs text-gray-300 transition-colors duration-200 hover:border-error-500 hover:text-error-500 disabled:opacity-50"
+                  className="shrink-0 cursor-pointer rounded-[10px] border border-white-12 px-3 py-2 font-manrope text-xs text-gray-300 transition-colors duration-200 hover:border-error-500 hover:text-error-500 disabled:opacity-50"
                 >
-                  Remove friend
+                  Remove<span className="sr-only sm:not-sr-only"> friend</span>
                 </button>
               </header>
 

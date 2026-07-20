@@ -33,7 +33,7 @@ export function MessageList({ messages, currentUserId, isLoading }: MessageListP
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-6">
+    <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-4 md:p-6">
       {messages.map((message) => {
         const mine = message.sender_id === currentUserId
 
@@ -43,7 +43,7 @@ export function MessageList({ messages, currentUserId, isLoading }: MessageListP
             className={`flex animate-showContent ${mine ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[60%] rounded-2xl px-3.5 py-2.5 font-manrope text-sm leading-[1.45] text-gray-100 ${
+              className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 font-manrope text-sm leading-[1.45] text-gray-100 sm:max-w-[75%] lg:max-w-[60%] ${
                 mine
                   ? 'bg-[linear-gradient(135deg,var(--color-brand-500),var(--color-brand-400))]'
                   : 'bg-gray-500'
