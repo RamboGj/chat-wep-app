@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { API_BASE } from '@/lib/api'
 import type { Message } from '@/types/api'
 
 /** Mirrors api.MessageKind — a Go iota, so these are positional. */
@@ -34,9 +35,15 @@ const MAX_RECONNECT_DELAY = 15_000
  */
 const STABLE_CONNECTION_MS = 10_000
 
+/**
+ * Derived from API_BASE so the socket follows the API wherever it is pointed.
+ * Resolving against the current location handles both forms it can take: a
+ * same-origin path, and an absolute origin on another host.
+ */
 function socketUrl(): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/api/v1/ws`
+  const url = new URL(`${API_BASE}/ws`, window.location.href)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url.toString()
 }
 
 interface UseChatSocketOptions {

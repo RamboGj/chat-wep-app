@@ -1,0 +1,66 @@
+databases:
+  - name: chatapp-db
+    databaseName: chatapp
+    user: chatapp
+    plan: free # 30-day expiry on free; upgrade before this is anything but a demo
+
+services:
+  # ---- HTTP API + WebSocket hub (web service) -------------------------------
+  - type: web
+    name: chatapp-api
+    runtime: go
+    plan: free # NOTE: free instances sleep when idle, which drops every open /ws socket
+    rootDir: backend
+    # tern is an external binary, not a module dependency, so install it here.
+    # GOBIN puts it somewhere the start command can reach.
+    buildCommand: |
+      go build -o ./bin/api ./cmd/api
+      GOBIN=$PWD/bin go install github.com/jackc/tern/v2@latest
+    # Migrations run against the env vars Render injects below. We call tern
+    # directly rather than `cmd/terndotenv`, which requires a .env file that
+    # does not exist here.
+    startCommand: |
+      ./bin/tern migrate \
+        --migrations ./internal/store/pgstore/migrations \
+        --config ./internal/store/pgstore/migrations/tern.conf
+      ./bin/api
+    healthCheckPath: /api/v1/healthz
+    envVars:
+      # Render routes external traffic to the port the process binds. Binding
+      # localhost would make the service unreachable.
+      - key: CHATAPP_API_ADDR
+        value: 0.0.0.0:10000
+      - key: CHATAPP_DATABASE_HOST
+        fromDatabase:
+          name: chatapp-db
+          property: host
+      - key: CHATAPP_DATABASE_PORT
+        fromDatabase:
+          name: chatapp-db
+          property: port
+      - key: CHATAPP_DATABASE_USER
+        fromDatabase:
+          name: chatapp-db
+          property: user
+      - key: CHATAPP_DATABASE_PASSWORD
+        fromDatabase:
+          name: chatapp-db
+          property: password
+      - key: CHATAPP_DATABASE_NAME
+        fromDatabase:
+          name: chatapp-db
+          property: database
+      - key: CHATAPP_JWT_SECRET
+        generateValue: true
+      - key: CHATAPP_ACCESS_TOKEN_TTL
+        value: 15m
+      - key: CHATAPP_REFRESH_TOKEN_TTL
+        value: 168h
+      # Cross-site over HTTPS: cookies must carry Secure or the browser drops them.
+      - key: CHATAPP_COOKIE_SECURE
+        value: "true"
+      # Set to the deployed Vercel origin after the frontend's first deploy,
+      # e.g. https://chat.yourdomain.com. Gates both /ws and CORS. Kept manual
+      # (sync:false) because the value isn't known until the frontend exists.
+      - key: CHATAPP_ALLOWED_ORIGINS
+        value: "https://chat-wep-app.vercel.app/"
