@@ -64,14 +64,17 @@ func run() error {
 	hub := api.NewHub(chatService, messageService)
 	go hub.Run()
 
+	allowedOrigins := allowedOriginsFromEnv()
+
 	s := api.Api{
-		Router:        chi.NewMux(),
-		UserService:   services.NewUserService(pool),
-		FriendService: services.NewFriendService(pool),
-		ChatService:   chatService,
-		Jwt:           jwtCfg,
-		Hub:           hub,
-		WsUpgrader:    wsUpgrader(),
+		Router:         chi.NewMux(),
+		UserService:    services.NewUserService(pool),
+		FriendService:  services.NewFriendService(pool),
+		ChatService:    chatService,
+		Jwt:            jwtCfg,
+		Hub:            hub,
+		WsUpgrader:     wsUpgrader(allowedOrigins),
+		AllowedOrigins: allowedOrigins,
 	}
 
 	s.BindRoutes()
@@ -86,22 +89,38 @@ func run() error {
 	return nil
 }
 
-// wsUpgrader builds the upgrader. Because the socket authenticates with a
-// cookie, Origin must be checked or any site could open an authenticated socket
-// on the user's behalf. Leaving CHATAPP_ALLOWED_ORIGINS unset keeps gorilla's
-// same-origin default; set it to the frontend's origin when it is served
-// separately.
-func wsUpgrader() websocket.Upgrader {
+// allowedOriginsFromEnv parses CHATAPP_ALLOWED_ORIGINS. Values are compared
+// against the browser's Origin header, which carries no path and no trailing
+// slash, so a configured "https://app.example.com/" would never match — the
+// trailing slash is trimmed rather than left to fail silently at runtime.
+func allowedOriginsFromEnv() []string {
 	raw := os.Getenv("CHATAPP_ALLOWED_ORIGINS")
 	if raw == "" {
+		return nil
+	}
+
+	var origins []string
+	for _, origin := range strings.Split(raw, ",") {
+		origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+		if origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
+}
+
+// wsUpgrader builds the upgrader. Because the socket authenticates with a
+// cookie, Origin must be checked or any site could open an authenticated socket
+// on the user's behalf. An empty list keeps gorilla's same-origin default; pass
+// the frontend's origin when it is served separately.
+func wsUpgrader(allowedOrigins []string) websocket.Upgrader {
+	if len(allowedOrigins) == 0 {
 		return websocket.Upgrader{}
 	}
 
-	allowed := make(map[string]struct{})
-	for _, origin := range strings.Split(raw, ",") {
-		if origin = strings.TrimSpace(origin); origin != "" {
-			allowed[origin] = struct{}{}
-		}
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		allowed[origin] = struct{}{}
 	}
 
 	return websocket.Upgrader{
