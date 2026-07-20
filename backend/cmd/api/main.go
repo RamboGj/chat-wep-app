@@ -151,12 +151,45 @@ func jwtConfigFromEnv() (jwtutils.Config, error) {
 		return jwtutils.Config{}, fmt.Errorf("invalid CHATAPP_REFRESH_TOKEN_TTL: %w", err)
 	}
 
+	secure := os.Getenv("CHATAPP_COOKIE_SECURE") == "true"
+
+	sameSite, err := sameSiteFromEnv()
+	if err != nil {
+		return jwtutils.Config{}, err
+	}
+
+	// Browsers silently discard a SameSite=None cookie that is not Secure, which
+	// would look exactly like a working login that never persists. Fail loudly.
+	if sameSite == http.SameSiteNoneMode && !secure {
+		return jwtutils.Config{}, fmt.Errorf(
+			"CHATAPP_COOKIE_SAMESITE=none requires CHATAPP_COOKIE_SECURE=true")
+	}
+
 	return jwtutils.Config{
 		Secret:     []byte(secret),
 		AccessTTL:  accessTTL,
 		RefreshTTL: refreshTTL,
-		Secure:     os.Getenv("CHATAPP_COOKIE_SECURE") == "true",
+		Secure:     secure,
+		SameSite:   sameSite,
 	}, nil
+}
+
+// sameSiteFromEnv reads CHATAPP_COOKIE_SAMESITE. Lax is the default and is
+// correct whenever the frontend shares a registrable domain with the API
+// (app.example.com + api.example.com). Only a frontend on a wholly unrelated
+// domain needs none — see the note in .env.example about the cost.
+func sameSiteFromEnv() (http.SameSite, error) {
+	switch strings.ToLower(envOr("CHATAPP_COOKIE_SAMESITE", "lax")) {
+	case "lax":
+		return http.SameSiteLaxMode, nil
+	case "none":
+		return http.SameSiteNoneMode, nil
+	case "strict":
+		return http.SameSiteStrictMode, nil
+	default:
+		return 0, fmt.Errorf(
+			"invalid CHATAPP_COOKIE_SAMESITE: want lax, none or strict")
+	}
 }
 
 func envOr(key, fallback string) string {

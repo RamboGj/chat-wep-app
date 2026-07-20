@@ -59,6 +59,12 @@ services:
       # Cross-site over HTTPS: cookies must carry Secure or the browser drops them.
       - key: CHATAPP_COOKIE_SECURE
         value: "true"
+      # vercel.app and onrender.com are unrelated registrable domains, so the
+      # cookies are third-party and Lax would never send them. Switch back to
+      # lax once the frontend and API share a domain — Safari blocks third-party
+      # cookies by default, so some visitors cannot log in while this is none.
+      - key: CHATAPP_COOKIE_SAMESITE
+        value: none
       # Set to the deployed Vercel origin after the frontend's first deploy,
       # e.g. https://chat.yourdomain.com. Gates both /ws and CORS. Kept manual
       # (sync:false) because the value isn't known until the frontend exists.

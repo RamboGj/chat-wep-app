@@ -29,6 +29,11 @@ type Config struct {
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
 	Secure     bool
+
+	// SameSite mode for both cookies. Lax is right when the frontend shares a
+	// registrable domain with the API; a frontend on an unrelated domain needs
+	// None, which browsers only honour together with Secure.
+	SameSite http.SameSite
 }
 
 type claims struct {
@@ -102,7 +107,7 @@ func (c Config) accessCookie(value string, maxAge int) *http.Cookie {
 		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   c.Secure,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: c.SameSite,
 	}
 }
 
@@ -114,7 +119,7 @@ func (c Config) refreshCookie(value string, maxAge int) *http.Cookie {
 		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   c.Secure,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: c.SameSite,
 	}
 }
 
