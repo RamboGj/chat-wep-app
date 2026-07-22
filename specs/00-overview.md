@@ -3,16 +3,18 @@
 The MVP (auth, friends/invitations, real-time 1:1 chat) is built and deployed. Its specs live in
 [`backend/specs/`](../backend/specs/) and remain the reference for everything already shipped.
 
-This directory holds the **next four features**. Unlike the MVP specs, these are full-stack: each
+This directory holds the **post-MVP features**. Unlike the MVP specs, these are full-stack: each
 file covers backend and frontend in one place, because the contract between them is the part
 most likely to drift.
 
 ## Current stage
 
-**Read receipts and image messages ship now. Group chats are deferred to a later stage.**
+**Pagination, read receipts, and image messages ship now. Group chats are deferred to a later
+stage.**
 
 | # | Spec | Stage | Backend | Frontend |
 |---|---|---|---|---|
+| 5 | [`05-messages-pagination.md`](./05-messages-pagination.md) | **now** | — | ✔ |
 | 2 | [`02-read-receipts.md`](./02-read-receipts.md) | **now** | ✔ | ✔ |
 | 4 | [`04-image-messages.md`](./04-image-messages.md) | **now** | ✔ | ✔ |
 | 1 | [`01-react-router-migration.md`](./01-react-router-migration.md) | unscheduled | — | ✔ |
@@ -29,10 +31,17 @@ Tailwind v4 with the project's design tokens.
 
 ## Order within this stage
 
-**Read receipts first, then images.** They are close to independent — different columns, different
-endpoints, no shared query beyond `ListChatsForUser`, which each extends by one field. Doing read
-receipts first means the `MessageView` DTO that feature 4 introduces arrives once, already knowing
-every field it has to carry.
+**Pagination first, then read receipts, then images.**
+
+Feature 5 is frontend-only — the cursor API it needs already exists — but it changes the *shape* of
+the cached message list from `Message[]` to `InfiniteData<Message[]>`, and both of the others add
+writes to that cache. Landing it first means those writes are authored once against the final
+shape. It is also the smallest of the three and touches no SQL, so it does not block either branch.
+
+Read receipts then images. They are close to independent — different columns, different endpoints,
+no shared query beyond `ListChatsForUser`, which each extends by one field. Doing read receipts
+first means the `MessageView` DTO that feature 4 introduces arrives once, already knowing every
+field it has to carry.
 
 They can also be built in parallel on separate branches. The only collision points are
 `queries/messages.sql` (both add a column to `CreateMessage` and `ListMessages`) and
@@ -40,6 +49,8 @@ They can also be built in parallel on separate branches. The only collision poin
 about in advance.
 
 ## Migrations introduced
+
+Feature 5 introduces none — it is frontend-only and reuses `idx_messages_chat_sent` from `005`.
 
 tern applies migrations in strict filename order.
 
@@ -118,6 +129,11 @@ Flagged here rather than buried, because each is a deliberate acceptance of a li
 3. **Orphaned uploads are never reclaimed.** A presigned upload that is never sent as a message
    leaves an object nothing references. Bounded by the 5 MB cap and by auth; see
    [`04-image-messages.md`](./04-image-messages.md#orphaned-objects).
+4. **The history cursor is `sent_at` alone, not `(sent_at, id)`.** Two messages inserted into one
+   chat within the same microsecond, with a page boundary falling between them, would lose the
+   second from history. Unreachable in this application's write pattern; the compound-cursor fix is
+   documented in
+   [`05-messages-pagination.md`](./05-messages-pagination.md#known-tension--the-cursor-is-sent_at-alone).
 
 ## New environment variables
 

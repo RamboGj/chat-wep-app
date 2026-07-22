@@ -1,5 +1,5 @@
 import { useState, type ComponentProps } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate } from 'react-router'
 import { Input } from '@/components/atoms/Input/Input'
 import { Button } from '@/components/atoms/Button/Button'
 import { ZLoginSchema } from '@/utils/validation/auth'
@@ -39,7 +39,7 @@ export function LoginForm({ defaultEmail = '', notice, ...rest }: LoginFormProps
     setErrors({})
     try {
       await login.mutateAsync(parsed.data)
-      navigate({ to: '/' }) 
+      navigate('/')
     } catch (error) {
       setErrors(requestFieldErrors(error))
     }
