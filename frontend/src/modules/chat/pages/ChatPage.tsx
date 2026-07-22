@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate } from 'react-router'
 import { Avatar } from '@/components/atoms/Avatar/Avatar'
 import { Logo } from '@/components/atoms/Logo/Logo'
 import { useCurrentUser, useLogout } from '@/modules/auth/hooks/use-auth'
@@ -64,7 +64,7 @@ export function ChatPage() {
 
   function handleLogout() {
     logout.mutate(undefined, {
-      onSettled: () => navigate({ to: '/auth' }),
+      onSettled: () => navigate('/auth'),
     })
   }
 
