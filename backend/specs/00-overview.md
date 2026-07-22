@@ -18,6 +18,12 @@ defines *how*.
 
 Full database schema and migration order: [`schema.md`](./schema.md).
 
+> **These specs describe the MVP as shipped.** Four post-MVP features (React Router migration,
+> read receipts, group chats, image messages) are specified in [`../../specs/`](../../specs/) and
+> change the schema and several contracts here — notably `messages` (`read_at`, `type`), `chats`
+> (`is_group`, `title` now used), and the shape of `ChatSummary`. Read that directory alongside
+> this one.
+
 ## Stack
 
 Go 1.26 · chi · pgx/v5 + sqlc · tern migrations · gorilla/websocket · JWT (golang-jwt/v5) ·

@@ -71,7 +71,7 @@ export function ChatSidebar({
                     type="button"
                     onClick={() => onSelect(chat.chat_id)}
                     aria-current={isSelected}
-                    className="mb-0.5 flex w-full items-center gap-3 rounded-xl p-3 text-left transition-colors duration-200 hover:bg-white-08"
+                    className="mb-0.5 flex w-full items-center gap-3 rounded-xl p-3 text-left transition-colors duration-200 hover:bg-white-08 hover:cursor-pointer"
                   >
                     <Avatar
                       name={chat.other_username}
