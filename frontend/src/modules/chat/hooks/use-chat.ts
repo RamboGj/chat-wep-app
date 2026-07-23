@@ -34,6 +34,16 @@ export function useMessages(chatId: string | null) {
     getPreviousPageParam: (firstPage) =>
       firstPage.length === MESSAGE_PAGE_SIZE ? firstPage[0].sent_at : undefined,
     getNextPageParam: () => undefined,
+    // Never let this query go stale, which disables every automatic refetch
+    // (window focus, remount, reconnect). Those are actively destructive here:
+    // this is a backward-paginated query, but TanStack's refetch-all path walks
+    // forward via getNextPageParam (which we return undefined for). Once older
+    // pages are prepended, oldPageParams[0] is a `before: <sent_at>` cursor, so
+    // a refetch pulls a single page of *older* messages, stops, and drops the
+    // newest pages — the list silently rewinds to old history on tab refocus.
+    // History is immutable and kept live locally through the socket, so there
+    // is nothing to refetch anyway.
+    staleTime: Infinity,
   })
 
   return {
