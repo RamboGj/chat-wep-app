@@ -42,7 +42,13 @@ export function ChatPage() {
 
   const activeChatId = selectedChat?.chat_id ?? null
 
-  const { data: messages = [], isLoading: messagesLoading } = useMessages(activeChatId)
+  const {
+    messages,
+    isLoading: messagesLoading,
+    hasOlder,
+    isLoadingOlder,
+    loadOlder,
+  } = useMessages(activeChatId)
 
   const activeUnreadCount = selectedChat?.unread_count ?? 0
 
@@ -234,6 +240,9 @@ export function ChatPage() {
                 messages={messages}
                 currentUserId={user.id}
                 isLoading={messagesLoading}
+                hasOlder={hasOlder}
+                isLoadingOlder={isLoadingOlder}
+                loadOlder={loadOlder}
               />
 
               <MessageComposer onSend={handleSend} status={status} />

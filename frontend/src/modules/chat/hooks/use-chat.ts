@@ -1,9 +1,18 @@
 import { useCallback } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+  type QueryClient,
+} from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query-keys'
-import type { ChatSummary, Message } from '@/types/api'
+import type { ChatSummary, Message, User } from '@/types/api'
 import { chatApi } from '../api/chat-api'
 import { useChatSocket } from './use-chat-socket'
+
+export const MESSAGE_PAGE_SIZE = 20
 
 export function useChats() {
   return useQuery({
@@ -13,11 +22,49 @@ export function useChats() {
 }
 
 export function useMessages(chatId: string | null) {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: queryKeys.messages(chatId ?? ''),
-    queryFn: () => chatApi.listMessages(chatId as string),
+    queryFn: ({ pageParam }) =>
+      chatApi.listMessages(chatId as string, {
+        before: pageParam,
+        limit: MESSAGE_PAGE_SIZE,
+      }),
     enabled: Boolean(chatId),
+    initialPageParam: undefined as string | undefined,
+    getPreviousPageParam: (firstPage) =>
+      firstPage.length === MESSAGE_PAGE_SIZE ? firstPage[0].sent_at : undefined,
+    getNextPageParam: () => undefined,
   })
+
+  return {
+    messages: query.data?.pages.flat() ?? [],
+    // isPending, not isFetching: it is true only while there is no data at all,
+    // so a prepend never replaces the list with the full-pane loader.
+    isLoading: query.isPending,
+    hasOlder: query.hasPreviousPage,
+    isLoadingOlder: query.isFetchingPreviousPage,
+    loadOlder: query.fetchPreviousPage,
+  }
+}
+
+/**
+ * Applies `update` to every loaded page of a chat's history.
+ *
+ * The cached value is `InfiniteData<Message[]>`, not `Message[]`, and nothing
+ * enforces that: `setQueryData<Message[]>` still compiles against the same key,
+ * writes a bare array over the InfiniteData object, and the list goes blank on
+ * the next render. Every page-agnostic write goes through here so that shape is
+ * stated in exactly one place.
+ */
+function updateMessagePages(
+  queryClient: QueryClient,
+  chatId: string,
+  update: (page: Message[]) => Message[],
+) {
+  queryClient.setQueryData<InfiniteData<Message[]>>(
+    queryKeys.messages(chatId),
+    (current) => current && { ...current, pages: current.pages.map(update) },
+  )
 }
 
 /**
@@ -39,8 +86,32 @@ export function useMarkChatRead() {
         ),
       )
     },
-    onSuccess: (_data, chatId) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.messages(chatId) })
+    onSuccess: (result, chatId) => {
+      // The server's read fan-out deliberately skips the reader, so this
+      // response is the only thing that stamps our own copy of the backlog.
+      //
+      // Written locally rather than invalidated: history is paged now, and an
+      // invalidation refetches every loaded page — one request per page held —
+      // for a field the response already carries in full.
+      //
+      // `sender_id !== me` mirrors the UPDATE's own `sender_id <> caller`
+      // filter. Without it our own still-unread messages would be stamped read
+      // here and grow a read tick nobody earned, so an unknown current user
+      // skips the write entirely rather than guessing; the next natural refetch
+      // corrects it.
+      const me = queryClient.getQueryData<User | null>(queryKeys.currentUser)
+
+      if (result.read_at !== null && me) {
+        const readAt = result.read_at
+
+        updateMessagePages(queryClient, chatId, (page) =>
+          page.map((m) =>
+            m.read_at === null && m.sender_id !== me.id
+              ? { ...m, read_at: readAt }
+              : m,
+          ),
+        )
+      }
 
       // Between fetches the count is derived locally, by counting socket
       // frames. Re-deriving it from the server — the only place it is computed
@@ -86,12 +157,22 @@ export function useChatRealtime({ enabled, currentUserId, onError }: UseChatReal
 
   const applyMessage = useCallback(
     (message: Message) => {
-      queryClient.setQueryData<Message[]>(
+      // The one write that is not page-agnostic: an inbound message is the
+      // newest, so it belongs on the last page. Page 0 is the initial fetch and
+      // every fetchPreviousPage prepends, so the last page is the newest one.
+      queryClient.setQueryData<InfiniteData<Message[]>>(
         queryKeys.messages(message.chat_id),
         (current) => {
-          if (!current) return current // not loaded yet; the fetch will include it
-          if (current.some((m) => m.id === message.id)) return current
-          return [...current, message]
+          if (!current || current.pages.length === 0) return current // not loaded yet; the fetch will include it
+
+          // Idempotency now has to span pages, not just one array.
+          if (current.pages.some((page) => page.some((m) => m.id === message.id))) {
+            return current
+          }
+
+          const pages = current.pages.slice()
+          pages[pages.length - 1] = [...pages[pages.length - 1], message]
+          return { ...current, pages }
         },
       )
 
@@ -162,8 +243,8 @@ export function useChatRealtime({ enabled, currentUserId, onError }: UseChatReal
     (chatId: string, readAt: string) => {
       const readAtMs = Date.parse(readAt)
 
-      queryClient.setQueryData<Message[]>(queryKeys.messages(chatId), (current) =>
-        current?.map((m) =>
+      updateMessagePages(queryClient, chatId, (page) =>
+        page.map((m) =>
           m.read_at === null && Date.parse(m.sent_at) <= readAtMs
             ? { ...m, read_at: readAt }
             : m,
