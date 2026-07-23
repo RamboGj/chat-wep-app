@@ -17,6 +17,8 @@ stage.**
 | 5 | [`05-messages-pagination.md`](./05-messages-pagination.md) | **now** | — | ✔ |
 | 2 | [`02-read-receipts.md`](./02-read-receipts.md) | **now** | ✔ | ✔ |
 | 4 | [`04-image-messages.md`](./04-image-messages.md) | **now** | ✔ | ✔ |
+| 6 | [`06-google-auth.md`](./06-google-auth.md) | **now** | ✔ | ✔ |
+| 7 | [`07-typing-indicator.md`](./07-typing-indicator.md) | **now** | ✔ | ✔ |
 | 1 | [`01-react-router-migration.md`](./01-react-router-migration.md) | unscheduled | — | ✔ |
 | 3 | [`03-group-chats.md`](./03-group-chats.md) | next stage | ✔ | ✔ |
 
@@ -31,7 +33,15 @@ Tailwind v4 with the project's design tokens.
 
 ## Order within this stage
 
-**Pagination first, then read receipts, then images.**
+**Pagination first, then read receipts, then images.** Google auth (6) is independent of all
+three — it touches `users`, `/auth`, and the auth page, and shares no query, no cache entry, and
+no component with them. Slot it wherever it fits; its only coupling to the others is the migration
+number, which is first-come (see below).
+
+**Typing (7) goes after read receipts (2).** Both write to the sidebar row's preview line and both
+add a WebSocket kind, so doing them in the other order means authoring that line twice and
+guessing at the other's kind number. Neither touches the database, so there is no migration
+conflict between them.
 
 Feature 5 is frontend-only — the cursor API it needs already exists — but it changes the *shape* of
 the cached message list from `Message[]` to `InfiniteData<Message[]>`, and both of the others add
@@ -55,18 +65,36 @@ Feature 5 introduces none — it is frontend-only and reuses `idx_messages_chat_
 tern applies migrations in strict filename order.
 
 ```
-006_add_read_at_to_messages.sql     (feature 2 — this stage)
+006_add_read_at_to_messages.sql     (feature 2 — this stage, applied)
 007_add_type_to_messages.sql        (feature 4 — this stage)
-008_add_is_group_to_chats.sql       (feature 3 — next stage)
+008_add_google_id_to_users.sql      (feature 6 — this stage)
+009_add_is_group_to_chats.sql       (feature 3 — next stage)
 ```
 
-If you land 2 and 4 in the other order, swap 006/007 — nothing depends on their relative order.
+**Numbers are claimed on landing, not reserved.** tern refuses a sequence with a gap — it aborts
+with `Missing migration N` — so whichever of 4 and 6 merges first takes `007` and the other takes
+`008`. Nothing depends on their relative order; renumber the loser's file in the merge.
 
 After editing anything under `migrations/` or `queries/`, regenerate:
 
 ```sh
 sqlc generate -f ./internal/store/pgstore/sqlc.yml
 ```
+
+## WebSocket kinds claimed
+
+`MessageKind` is a Go iota mirrored **positionally** by every deployed frontend build, so it is
+append-only: renumbering a kind silently routes frames to the wrong handler in every tab still
+running the old bundle. Like the migrations, numbers are claimed on landing, not reserved.
+
+```
+0-4  MVP        (send, new, error, invalid-json, chat-created)
+5    feature 2  KindMessagesRead                    — landed
+6    feature 7  KindTyping      (client → server)
+7    feature 7  KindUserTyping  (server → participants)
+```
+
+Feature 3 appends after those. Features 4 and 5 add none.
 
 ## Cross-cutting decisions
 
@@ -129,20 +157,34 @@ Flagged here rather than buried, because each is a deliberate acceptance of a li
 3. **Orphaned uploads are never reclaimed.** A presigned upload that is never sent as a message
    leaves an object nothing references. Bounded by the 5 MB cap and by auth; see
    [`04-image-messages.md`](./04-image-messages.md#orphaned-objects).
-4. **The history cursor is `sent_at` alone, not `(sent_at, id)`.** Two messages inserted into one
+4. **A Google ID token is replayable for its ~1h lifetime.** No nonce is issued, so anyone who
+   captures the token in that window can exchange it for a session — an attacker who can do that
+   can already read `localStorage`. Documented with the nonce fix in
+   [`06-google-auth.md`](./06-google-auth.md#nonce).
+5. **The history cursor is `sent_at` alone, not `(sent_at, id)`.** Two messages inserted into one
    chat within the same microsecond, with a page boundary falling between them, would lose the
    second from history. Unreachable in this application's write pattern; the compound-cursor fix is
    documented in
    [`05-messages-pagination.md`](./05-messages-pagination.md#known-tension--the-cursor-is-sent_at-alone).
+6. **The hub's participant cache can serve a stale roster for up to 10 minutes.** Correct by
+   construction today — membership is written once at accept-invite and never edited, and
+   remove-friend evicts explicitly. It becomes a real staleness window when feature 3 adds
+   add/remove-member, which must evict the same way. See
+   [`07-typing-indicator.md`](./07-typing-indicator.md#no-database-on-the-typing-path).
 
 ## New environment variables
 
-Feature 4 only. Add to `backend/.env.example`, `backend/render.yaml`, and the Render dashboard:
+Features 4 and 6. Add to `backend/.env.example`, `backend/render.yaml`, and the Render dashboard:
 
 ```
-CHATAPP_R2_ACCOUNT_ID
-CHATAPP_R2_BUCKET
-CHATAPP_R2_ACCESS_KEY_ID
-CHATAPP_R2_SECRET_ACCESS_KEY
-CHATAPP_R2_PUBLIC_BASE_URL
+CHATAPP_R2_ACCOUNT_ID              (feature 4)
+CHATAPP_R2_BUCKET                  (feature 4)
+CHATAPP_R2_ACCESS_KEY_ID           (feature 4)
+CHATAPP_R2_SECRET_ACCESS_KEY       (feature 4)
+CHATAPP_R2_PUBLIC_BASE_URL         (feature 4)
+CHATAPP_GOOGLE_CLIENT_ID           (feature 6 — not a secret; see the spec)
 ```
+
+Feature 6 also adds a frontend variable, `VITE_GOOGLE_CLIENT_ID` — same value, set in
+`frontend/.env.example` and in Vercel. It is inlined at build time, so changing it in the
+dashboard does nothing until the next build.
