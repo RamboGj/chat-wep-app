@@ -30,7 +30,7 @@ validation rules (`Valid(ctx) Evaluator`). `internal/jsonutils`, `internal/valid
 ## Worked request trace — `POST /api/v1/friends/invites`
 
 1. **Router** (`routes.go`) matches the route inside the `AuthMiddleware`-protected group.
-2. **AuthMiddleware** (`middleware.go`) reads the `access_token` cookie, verifies the JWT,
+2. **AuthMiddleware** (`middleware.go`) reads the `Authorization: Bearer` token, verifies the JWT,
    puts the caller's `uuid.UUID` into the request context. Missing/invalid → `401`.
 3. **Handler** `handleCreateInvite` (`friends_handlers.go`):
    - `data, problems, err := jsonutils.DecodeValidJson[friend.CreateInviteRequest](r)`

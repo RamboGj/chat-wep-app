@@ -19,8 +19,21 @@ Keep the split. `use-chat-socket` knows nothing about the query cache; `use-chat
 about frames or reconnects. A new event kind means a new callback on the socket hook and a new
 handler in `useChatRealtime` — never a `setQueryData` inside the socket layer.
 
-The socket needs no token: the connection is authenticated by the same httpOnly cookie as every
-other request, which is the reason the dev proxy keeps the app same-origin.
+The socket authenticates with the same access token as every other request, but it cannot send
+an `Authorization` header — the `WebSocket` constructor takes no headers. It passes the token
+as the second **subprotocol**, after a `'bearer'` sentinel, and the server selects `'bearer'`:
+
+```ts
+new WebSocket(socketUrl(), [WS_AUTH_PROTOCOL, token])
+```
+
+The query string is *not* an option: chi's request logger would write the token into every
+access log line.
+
+`connect()` calls `ensureAccessToken()` first, which refreshes an expired token before the
+handshake. Skipping that is a trap — the upgrade is rejected outright with a stale token, and
+the reconnect would present the very same token, so the socket retries forever instead of
+recovering.
 
 ## Only one socket per user, ever
 

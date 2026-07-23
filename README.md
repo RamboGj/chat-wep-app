@@ -4,7 +4,7 @@
 
 # Pulse — Real-Time Chat
 
-A full-stack 1:1 messaging app: cookie-based JWT auth, friend invitations,<br>
+A full-stack 1:1 messaging app: JWT auth, friend invitations,<br>
 and live messaging over a single multiplexed WebSocket.
 
 **Go 1.26 · PostgreSQL 17 · React 19 · TypeScript · TanStack Router/Query · Tailwind v4**
@@ -17,7 +17,7 @@ and live messaging over a single multiplexed WebSocket.
 
 | | |
 |---|---|
-| **Authentication** | Signup, login, logout, and silent token refresh. Access + refresh JWTs in `httpOnly` cookies. |
+| **Authentication** | Signup, login, logout, and silent token refresh. Access + refresh JWTs as bearer tokens. |
 | **Friend invitations** | Invite by username, accept (creates the chat), reject, list pending, remove friend. |
 | **Real-time messaging** | Live delivery over one multiplexed WebSocket per user, with paginated history over REST. |
 | **Presence of failure** | Automatic socket reconnection with capped exponential backoff and a live connection indicator. |
@@ -34,7 +34,7 @@ chat-app/
 │       ├── api/                 HTTP handlers, middleware, WS hub + client pumps
 │       ├── services/            business logic (user, friend, chat, message)
 │       ├── store/pgstore/       sqlc-generated queries + tern migrations
-│       ├── jwtutils/            token minting, parsing, cookie management
+│       ├── jwtutils/            token minting and parsing
 │       └── validator/           request validation
 └── frontend/                    React SPA
     └── src/
@@ -55,11 +55,21 @@ mapped to status codes at the edge, so HTTP concerns never leak inward.
 
 These were deliberate, and are the parts of the project worth reading.
 
-**Auth lives in `httpOnly` cookies, not `localStorage`.**
-Tokens are unreachable from JavaScript, so a successful XSS cannot exfiltrate a session. The
-refresh cookie is additionally path-scoped to `/api/v1/auth/refresh`, so it is not even sent on
-ordinary API calls. This choice pays off twice: the browser attaches the cookie to the WebSocket
-upgrade request automatically, so the socket needs no bespoke auth handshake at all.
+**Auth is a bearer token — after `httpOnly` cookies turned out to be unshippable.**
+Cookies were the original design, and the better one: unreachable from JavaScript, so a
+successful XSS cannot exfiltrate a session. What broke it was deployment topology. The frontend
+is on `*.vercel.app` and the API on `*.onrender.com` — unrelated registrable domains, which
+makes the auth cookies **third-party**. WebKit blocks those outright, and every browser on iOS
+is WebKit, so Safari, Chrome and Brave on iPhone all took a `200 OK` from `/auth/login`,
+silently dropped the cookie, and bounced the user back to the login screen. It worked on
+desktop, which is exactly what made it easy to miss.
+
+Bearer tokens have no origin rules, so they work regardless of how the two hosts relate. The
+cost is real and worth naming: the token lives in `localStorage`, where a successful XSS can
+read it. The WebSocket pays a smaller tax too — its upgrade cannot carry an `Authorization`
+header, so the token rides in `Sec-WebSocket-Protocol` (not the query string, which the request
+logger would capture). Putting both services on one registrable domain would allow
+`SameSite=Lax` cookies again, and is the fix worth making when the app gets a real domain.
 
 **One multiplexed socket per user, not one per chat.**
 Every envelope carries a `chat_id`; a single hub goroutine owns the client map — so it needs no
@@ -111,9 +121,9 @@ All routes are under `/api/v1`.
 
 ```
 POST   /auth/signup                    create account
-POST   /auth/login                     set access + refresh cookies
-POST   /auth/refresh                   mint a fresh access cookie
-POST   /auth/logout                    clear cookies
+POST   /auth/login                     returns access + refresh tokens
+POST   /auth/refresh                   mint a fresh access token
+POST   /auth/logout                    no-op; the client discards its tokens
 GET    /auth/me                        current user
 
 POST   /friends/invites/               invite by username
@@ -154,7 +164,7 @@ npm run dev
 ```
 
 The Vite dev server proxies `/api` (including the WebSocket upgrade) to the Go API, so the
-browser stays on a single origin and the auth cookies work without any CORS configuration.
+browser stays on a single origin and local dev needs no CORS configuration.
 
 ---
 

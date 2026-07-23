@@ -34,11 +34,17 @@ bcrypt · PostgreSQL 17 · docker-compose · air. Env prefix `CHATAPP_`.
 These decisions were made deliberately and deviate from a naive reading of the entity list —
 implement to the decision, not the original sketch.
 
-1. **Auth = JWT access + refresh, in httpOnly cookies (stateless).**
+1. **Auth = JWT access + refresh, as bearer tokens (stateless).**
    Access ~15m, refresh ~7d. `/auth/refresh` mints a fresh access token so users don't drop
-   mid-conversation. **Logout clears both cookies** — there is no server-side token table and no
-   revocation of an already-issued access token (short TTL bounds exposure). Cookie-based JWT
-   also authenticates the WebSocket upgrade with no extra work.
+   mid-conversation. **Logout is client-side** — there is no server-side token table and no
+   revocation of an already-issued token (short TTL bounds exposure).
+
+   This was originally httpOnly cookies. It could not stay that way: the frontend (Vercel) and
+   the API (Render) are on unrelated registrable domains, making the cookies third-party —
+   which WebKit blocks outright, so no browser on iOS could log in at all. Bearer tokens have
+   no origin rules. The cost is that the token sits in `localStorage`, readable by any script
+   on the origin. Moving both onto one registrable domain would allow `SameSite=Lax` cookies
+   again and is the better long-term fix.
 
 2. **WebSocket = single multiplexed socket per user** (`/api/v1/ws`), not one socket per chat.
    Envelopes carry `chat_id`; the hub fans out to connected participants. See the skill's

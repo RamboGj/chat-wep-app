@@ -1,3 +1,12 @@
+import {
+  accessTokenExpired,
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  setTokens,
+} from './auth-tokens'
+import type { RefreshedAccessToken } from '@/types/api'
+
 /** Every route the Go API serves lives under this prefix. */
 const API_PREFIX = '/api/v1'
 
@@ -7,8 +16,7 @@ const API_PREFIX = '/api/v1'
  * appended here, so it must not be repeated in the variable. Unset means
  * same-origin, which is what the dev proxy and a co-hosted deployment serve.
  *
- * A cross-origin API needs CORS with credentials, since the auth cookies stop
- * being same-origin.
+ * A cross-origin API needs CORS allowing the Authorization header.
  *
  * Note this is inlined at build time: changing it in the host's dashboard has no
  * effect until the frontend is rebuilt.
@@ -29,7 +37,11 @@ export class ApiError extends Error {
   readonly status: number
   readonly fields: Record<string, string>
 
-  constructor(status: number, message: string, fields: Record<string, string> = {}) {
+  constructor(
+    status: number,
+    message: string,
+    fields: Record<string, string> = {},
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
@@ -40,16 +52,34 @@ export class ApiError extends Error {
 let refreshInFlight: Promise<boolean> | null = null
 
 /**
- * Swaps the refresh cookie for a fresh access cookie. Concurrent callers share
+ * Swaps the refresh token for a fresh access token. Concurrent callers share
  * one request so a burst of 401s doesn't fire a refresh each.
  */
 function refreshSession(): Promise<boolean> {
   if (!refreshInFlight) {
-    const pending = fetch(`${API_BASE}/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-    })
-      .then((res) => res.ok)
+    const refresh = getRefreshToken()
+
+    const pending = (
+      refresh === null
+        ? Promise.resolve(false)
+        : fetch(`${API_BASE}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: refresh }),
+          }).then(async (res) => {
+            if (!res.ok) {
+              // A rejected token is spent; anything else (a 5xx, the free
+              // instance waking up) is worth keeping the session for, since
+              // dropping it would sign the user out over a blip.
+              if (res.status === 401) clearTokens()
+              return false
+            }
+
+            const data = (await res.json()) as RefreshedAccessToken
+            setTokens({ access: data.access_token })
+            return true
+          })
+    )
       .catch(() => false)
       .finally(() => {
         refreshInFlight = null
@@ -61,8 +91,24 @@ function refreshSession(): Promise<boolean> {
   return refreshInFlight
 }
 
+/**
+ * An access token that is good right now, refreshing first if the stored one
+ * has aged out. `apiFetch` doesn't need this — a 401 tells it the same thing —
+ * but the WebSocket does: its upgrade is rejected outright with a stale token,
+ * and a reconnect would carry the same stale token, so the socket would retry
+ * forever instead of recovering.
+ */
+export async function ensureAccessToken(): Promise<string | null> {
+  const token = getAccessToken()
+  if (token !== null && !accessTokenExpired(token)) return token
+
+  await refreshSession()
+  return getAccessToken()
+}
+
 async function parseBody(res: Response): Promise<unknown> {
-  if (res.status === 204 || res.headers.get('content-length') === '0') return null
+  if (res.status === 204 || res.headers.get('content-length') === '0')
+    return null
 
   const text = await res.text()
   if (!text) return null
@@ -101,19 +147,27 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   skipRefresh?: boolean
 }
 
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function apiFetch<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const { body, skipRefresh = false, headers, ...init } = options
 
-  const send = () =>
-    fetch(`${API_BASE}${path}`, {
+  // The token is read per attempt, not once: the retry below runs after a
+  // refresh has replaced it, and must send the new one.
+  const send = () => {
+    const token = getAccessToken()
+
+    return fetch(`${API_BASE}${path}`, {
       ...init,
-      credentials: 'include',
       headers: {
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
         ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
+  }
 
   let res = await send()
 

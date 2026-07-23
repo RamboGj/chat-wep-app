@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -63,6 +64,50 @@ func (api *Api) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = jsonutils.EncodeJson(w, r, http.StatusOK, map[string]any{"messages": messages})
+}
+
+func (api *Api) handleMarkChatRead(w http.ResponseWriter, r *http.Request) {
+	chatID, ok := uuidURLParam(w, r, "chat_id")
+	if !ok {
+		return
+	}
+
+	callerID := userIDFromContext(r.Context())
+
+	marked, readAt, err := api.ChatService.MarkChatRead(r.Context(), chatID, callerID)
+	if err != nil {
+		api.respondChatError(w, r, err)
+		return
+	}
+
+	// Nothing marked means nobody's view changed, so there is nothing to push.
+	if readAt != nil {
+		// The senders are passive here — nothing else would tell them their
+		// messages were read until they refetch. Same best-effort push as
+		// accept-invite: an offline sender picks the state up from history.
+		participants, err := api.ChatService.ParticipantIDs(r.Context(), chatID)
+		if err != nil {
+			// The read is persisted; only the live fan-out is lost.
+			slog.Error("failed to load participants for read fan-out", "error", err, "chat_id", chatID)
+		}
+
+		for _, userID := range participants {
+			if userID == callerID {
+				continue // the reader already knows
+			}
+
+			api.Hub.NotifyUser(r.Context(), userID, WSMessage{
+				Kind:   KindMessagesRead,
+				ChatID: chatID,
+				ReadAt: readAt,
+			})
+		}
+	}
+
+	_ = jsonutils.EncodeJson(w, r, http.StatusOK, map[string]any{
+		"marked":  marked,
+		"read_at": readAt,
+	})
 }
 
 func (api *Api) respondChatError(w http.ResponseWriter, r *http.Request, err error) {

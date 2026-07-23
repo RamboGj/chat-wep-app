@@ -109,13 +109,22 @@ func allowedOriginsFromEnv() []string {
 	return origins
 }
 
-// wsUpgrader builds the upgrader. Because the socket authenticates with a
-// cookie, Origin must be checked or any site could open an authenticated socket
-// on the user's behalf. An empty list keeps gorilla's same-origin default; pass
+// wsUpgrader builds the upgrader. Subprotocols must list the sentinel the
+// client offers alongside its access token, or gorilla answers the handshake
+// with no Sec-WebSocket-Protocol and the browser fails the connection.
+//
+// Origin is still checked even though the socket no longer authenticates with a
+// cookie: a bearer token is not attached automatically, so a foreign page
+// cannot forge an authenticated socket, but the check costs nothing and keeps
+// the surface narrow. An empty list keeps gorilla's same-origin default; pass
 // the frontend's origin when it is served separately.
 func wsUpgrader(allowedOrigins []string) websocket.Upgrader {
+	upgrader := websocket.Upgrader{
+		Subprotocols: []string{api.WSAuthProtocol},
+	}
+
 	if len(allowedOrigins) == 0 {
-		return websocket.Upgrader{}
+		return upgrader
 	}
 
 	allowed := make(map[string]struct{}, len(allowedOrigins))
@@ -123,16 +132,16 @@ func wsUpgrader(allowedOrigins []string) websocket.Upgrader {
 		allowed[origin] = struct{}{}
 	}
 
-	return websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			origin := r.Header.Get("Origin")
-			if origin == "" {
-				return true // non-browser client: no cross-site risk to guard
-			}
-			_, ok := allowed[origin]
-			return ok
-		},
+	upgrader.CheckOrigin = func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // non-browser client: no cross-site risk to guard
+		}
+		_, ok := allowed[origin]
+		return ok
 	}
+
+	return upgrader
 }
 
 func jwtConfigFromEnv() (jwtutils.Config, error) {
@@ -151,45 +160,11 @@ func jwtConfigFromEnv() (jwtutils.Config, error) {
 		return jwtutils.Config{}, fmt.Errorf("invalid CHATAPP_REFRESH_TOKEN_TTL: %w", err)
 	}
 
-	secure := os.Getenv("CHATAPP_COOKIE_SECURE") == "true"
-
-	sameSite, err := sameSiteFromEnv()
-	if err != nil {
-		return jwtutils.Config{}, err
-	}
-
-	// Browsers silently discard a SameSite=None cookie that is not Secure, which
-	// would look exactly like a working login that never persists. Fail loudly.
-	if sameSite == http.SameSiteNoneMode && !secure {
-		return jwtutils.Config{}, fmt.Errorf(
-			"CHATAPP_COOKIE_SAMESITE=none requires CHATAPP_COOKIE_SECURE=true")
-	}
-
 	return jwtutils.Config{
 		Secret:     []byte(secret),
 		AccessTTL:  accessTTL,
 		RefreshTTL: refreshTTL,
-		Secure:     secure,
-		SameSite:   sameSite,
 	}, nil
-}
-
-// sameSiteFromEnv reads CHATAPP_COOKIE_SAMESITE. Lax is the default and is
-// correct whenever the frontend shares a registrable domain with the API
-// (app.example.com + api.example.com). Only a frontend on a wholly unrelated
-// domain needs none — see the note in .env.example about the cost.
-func sameSiteFromEnv() (http.SameSite, error) {
-	switch strings.ToLower(envOr("CHATAPP_COOKIE_SAMESITE", "lax")) {
-	case "lax":
-		return http.SameSiteLaxMode, nil
-	case "none":
-		return http.SameSiteNoneMode, nil
-	case "strict":
-		return http.SameSiteStrictMode, nil
-	default:
-		return 0, fmt.Errorf(
-			"invalid CHATAPP_COOKIE_SAMESITE: want lax, none or strict")
-	}
 }
 
 func envOr(key, fallback string) string {

@@ -6,8 +6,10 @@ per user**. History and the chat list are served over REST. Full hub/client desi
 
 ## Connection model
 
-- One socket per user: `GET /api/v1/ws`, behind `AuthMiddleware` (the browser sends the
-  `access_token` cookie on the upgrade request — no bespoke WS auth).
+- One socket per user: `GET /api/v1/ws`, behind `WSAuthMiddleware`. The browser's WebSocket
+  API cannot set an `Authorization` header, so the client offers the subprotocols
+  `["bearer", "<access token>"]` and the server selects `"bearer"`. The query string is not
+  used: chi's request logger would record the token.
 - The `Hub` is a single long-lived goroutine created in `cmd/api/main.go` (`go hub.Run()`) and
   injected into `api.Api`. It owns `Clients map[uuid.UUID]*Client` — no mutex needed.
 - Inbound message names a `chat_id`; the hub authorizes the sender, persists, and pushes the
@@ -87,7 +89,8 @@ Default `limit` 50, cap at 100. Non-participant → `403`/`404`.
 
 ## Acceptance criteria
 
-- [ ] Connecting to `/ws` without a valid `access_token` cookie → `401`, no upgrade.
+- [ ] Connecting to `/ws` without a valid access token in `Sec-WebSocket-Protocol` → `401`,
+      no upgrade. The successful handshake echoes `Sec-WebSocket-Protocol: bearer`.
 - [ ] Two friends connected simultaneously: a message from A appears live for both A and B.
 - [ ] The message persists to `messages` and appears in `GET /chats/{id}/messages` afterward.
 - [ ] Sending to a `chat_id` the caller does not participate in → `KindError`, nothing persisted.

@@ -65,6 +65,12 @@ export function ChatSidebar({
             {filtered.map((chat) => {
               const isSelected = chat.chat_id === selectedChatId
 
+              // The open chat never wears a pill — you are looking at it, and
+              // its count is on its way to zero. Suppressing it here rather
+              // than in the cache is what lets an incoming message still raise
+              // the count and trigger the mark-read effect.
+              const unread = chat.unread_count > 0 && !isSelected
+
               return (
                 <li key={chat.chat_id}>
                   <button
@@ -93,9 +99,28 @@ export function ChatSidebar({
                         </span>
                       </div>
 
-                      <p className="mt-0.5 truncate font-manrope text-[13px] text-gray-300">
-                        {chat.last_message ?? 'Say hello 👋'}
-                      </p>
+                      {/* The dim grey preview is the read state; brightening it
+                          is the only change unread makes to the row besides the
+                          pill, so a read chat renders exactly as it did before
+                          this feature. */}
+                      <div className="mt-0.5 flex items-center justify-between gap-2">
+                        <p
+                          className={`truncate font-manrope text-[13px] ${
+                            unread ? 'text-gray-100' : 'text-gray-300'
+                          }`}
+                        >
+                          {chat.last_message ?? 'Say hello 👋'}
+                        </p>
+
+                        {unread && (
+                          <span
+                            aria-label={`${chat.unread_count} unread messages`}
+                            className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,var(--color-brand-500),var(--color-brand-400))] px-1.5 font-sora text-[11px] font-bold text-white"
+                          >
+                            {chat.unread_count > 99 ? '99+' : chat.unread_count}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </button>
                 </li>

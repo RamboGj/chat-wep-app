@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Avatar } from '@/components/atoms/Avatar/Avatar'
 import { Logo } from '@/components/atoms/Logo/Logo'
@@ -8,7 +8,7 @@ import { useRemoveFriend } from '@/modules/friends/hooks/use-friends'
 import { ChatSidebar } from '../components/ChatSidebar'
 import { MessageComposer } from '../components/MessageComposer'
 import { MessageList } from '../components/MessageList'
-import { useChatRealtime, useChats, useMessages } from '../hooks/use-chat'
+import { useChatRealtime, useChats, useMarkChatRead, useMessages } from '../hooks/use-chat'
 
 export function ChatPage() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
@@ -23,39 +23,28 @@ export function ChatPage() {
 
   const logout = useLogout()
   const removeFriend = useRemoveFriend()
+  const { mutate: markChatRead } = useMarkChatRead()
 
-  const handleSocketError = useCallback((message: string) => {
+
+  const handleSocketError = (message: string) => {
     setSocketError(message)
-  }, [])
+  }
 
-  // Stable identity: the dialog subscribes to it in an effect.
-  const closeNewChat = useCallback(() => setShowNewChat(false), [])
+  const closeNewChat = () => setShowNewChat(false)
 
   const { status, sendMessage } = useChatRealtime({
     enabled: Boolean(user),
+    currentUserId: user?.id,
     onError: handleSocketError,
   })
 
-  // Clear the socket error banner shortly after it appears.
-  useEffect(() => {
-    if (!socketError) return
+  const selectedChat = chats.find((chat) => chat.chat_id === selectedChatId) ?? null
 
-    const timer = setTimeout(() => setSocketError(null), 4000)
-    return () => clearTimeout(timer)
-  }, [socketError])
-
-  const selectedChat = useMemo(
-    () => chats.find((chat) => chat.chat_id === selectedChatId) ?? null,
-    [chats, selectedChatId],
-  )
-
-  // A chat can vanish underneath the selection — the other side may have
-  // removed us. Deriving the active id from the chat list rather than trusting
-  // the stored one means no request is ever made for a chat we no longer have,
-  // and the view falls back to the empty state on its own.
   const activeChatId = selectedChat?.chat_id ?? null
 
   const { data: messages = [], isLoading: messagesLoading } = useMessages(activeChatId)
+
+  const activeUnreadCount = selectedChat?.unread_count ?? 0
 
   function handleSend(content: string) {
     if (!activeChatId) return false
@@ -80,6 +69,30 @@ export function ChatPage() {
       onSuccess: () => setSelectedChatId(null),
     })
   }
+
+  // Clear the socket error banner shortly after it appears.
+  useEffect(() => {
+    if (!socketError) return
+
+    const timer = setTimeout(() => setSocketError(null), 4000)
+    return () => clearTimeout(timer)
+  }, [socketError])
+
+  useEffect(() => {
+    if (!activeChatId || activeUnreadCount === 0) return
+
+    const markIfVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      markChatRead(activeChatId)
+    }
+
+    markIfVisible()
+
+    document.addEventListener('visibilitychange', markIfVisible)
+    return () => document.removeEventListener('visibilitychange', markIfVisible)
+  }, [activeChatId, activeUnreadCount, markChatRead])
+
+
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-gray-900 text-gray-100">

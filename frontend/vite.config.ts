@@ -8,9 +8,9 @@ import tailwindcss from "@tailwindcss/vite"
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
 
-  // The backend sets httpOnly auth cookies, and the refresh cookie is scoped to
-  // the exact path /api/v1/auth/refresh. Proxying keeps the browser on a single
-  // origin, so those cookies are sent without any CORS setup on the API.
+  // Proxying keeps the browser on a single origin, so local dev needs no CORS
+  // setup on the API at all. Auth itself no longer depends on this — it rides
+  // on a bearer token, which crosses origins fine.
   const apiTarget = env.VITE_API_TARGET ?? 'http://localhost:3080'
 
   return {

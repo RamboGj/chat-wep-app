@@ -3,7 +3,6 @@ package jwtutils
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -13,27 +12,19 @@ import (
 const (
 	AccessToken  = "access"
 	RefreshToken = "refresh"
-
-	AccessCookieName  = "access_token"
-	RefreshCookieName = "refresh_token"
-
-	// The refresh cookie is scoped to the refresh endpoint so it is not sent
-	// on every other request.
-	refreshCookiePath = "/api/v1/auth/refresh"
 )
 
 var ErrInvalidToken = errors.New("invalid or expired token")
 
+// Config mints and verifies the two bearer tokens. Tokens are handed to the
+// client in the response body rather than in cookies: the frontend and the API
+// are on unrelated registrable domains, which makes any cookie between them a
+// third-party cookie — blocked outright by WebKit (so by every browser on iOS)
+// and by Brave. A bearer token has no such origin rules.
 type Config struct {
 	Secret     []byte
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
-	Secure     bool
-
-	// SameSite mode for both cookies. Lax is right when the frontend shares a
-	// registrable domain with the API; a frontend on an unrelated domain needs
-	// None, which browsers only honour together with Secure.
-	SameSite http.SameSite
 }
 
 type claims struct {
@@ -97,44 +88,4 @@ func (c Config) Parse(token, wantType string) (uuid.UUID, error) {
 	}
 
 	return userID, nil
-}
-
-func (c Config) accessCookie(value string, maxAge int) *http.Cookie {
-	return &http.Cookie{
-		Name:     AccessCookieName,
-		Value:    value,
-		Path:     "/",
-		MaxAge:   maxAge,
-		HttpOnly: true,
-		Secure:   c.Secure,
-		SameSite: c.SameSite,
-	}
-}
-
-func (c Config) refreshCookie(value string, maxAge int) *http.Cookie {
-	return &http.Cookie{
-		Name:     RefreshCookieName,
-		Value:    value,
-		Path:     refreshCookiePath,
-		MaxAge:   maxAge,
-		HttpOnly: true,
-		Secure:   c.Secure,
-		SameSite: c.SameSite,
-	}
-}
-
-func (c Config) SetAccessCookie(w http.ResponseWriter, access string) {
-	http.SetCookie(w, c.accessCookie(access, int(c.AccessTTL.Seconds())))
-}
-
-func (c Config) SetAuthCookies(w http.ResponseWriter, access, refresh string) {
-	c.SetAccessCookie(w, access)
-	http.SetCookie(w, c.refreshCookie(refresh, int(c.RefreshTTL.Seconds())))
-}
-
-// ClearAuthCookies expires both cookies. The attributes must match the ones
-// used when setting them or the browser will keep the originals.
-func (c Config) ClearAuthCookies(w http.ResponseWriter) {
-	http.SetCookie(w, c.accessCookie("", -1))
-	http.SetCookie(w, c.refreshCookie("", -1))
 }

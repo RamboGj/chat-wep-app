@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { API_BASE } from '@/lib/api'
+import { API_BASE, ensureAccessToken } from '@/lib/api'
 import type { Message } from '@/types/api'
+
+/**
+ * Mirrors api.WSAuthProtocol. The WebSocket constructor cannot set an
+ * Authorization header, and putting the token in the query string would write
+ * it into every access log, so it travels as the subprotocol entry after this
+ * sentinel. The server answers by selecting the sentinel alone.
+ */
+const WS_AUTH_PROTOCOL = 'bearer'
 
 /** Mirrors api.MessageKind — a Go iota, so these are positional. */
 export const WSKind = {
@@ -9,6 +17,7 @@ export const WSKind = {
   Error: 2,
   InvalidJSON: 3,
   ChatCreated: 4,
+  MessagesRead: 5,
 } as const
 
 export interface WSMessage {
@@ -19,6 +28,7 @@ export interface WSMessage {
   sender_id?: string
   sent_at?: string
   message?: string
+  read_at?: string
 }
 
 export type SocketStatus = 'connecting' | 'open' | 'closed'
@@ -52,6 +62,11 @@ interface UseChatSocketOptions {
   onNewMessage: (message: Message) => void
   /** An invite we sent was accepted; the chat list has a new entry. */
   onChatCreated?: () => void
+  /**
+   * Someone else opened a chat we are in: everything in it sent at or before
+   * `readAt` is now read.
+   */
+  onMessagesRead?: (chatId: string, readAt: string) => void
   onError?: (message: string) => void
 }
 
@@ -64,6 +79,7 @@ export function useChatSocket({
   enabled,
   onNewMessage,
   onChatCreated,
+  onMessagesRead,
   onError,
 }: UseChatSocketOptions) {
   const [status, setStatus] = useState<SocketStatus>('closed')
@@ -72,10 +88,15 @@ export function useChatSocket({
 
   // Handlers are read through a ref so a new callback identity on every render
   // never tears the socket down.
-  const handlers = useRef({ onNewMessage, onChatCreated, onError })
+  const handlers = useRef({
+    onNewMessage,
+    onChatCreated,
+    onMessagesRead,
+    onError,
+  })
   useEffect(() => {
-    handlers.current = { onNewMessage, onChatCreated, onError }
-  }, [onNewMessage, onChatCreated, onError])
+    handlers.current = { onNewMessage, onChatCreated, onMessagesRead, onError }
+  }, [onNewMessage, onChatCreated, onMessagesRead, onError])
 
   useEffect(() => {
     if (!enabled) return
@@ -87,14 +108,42 @@ export function useChatSocket({
     let attempts = 0
     let timer: ReturnType<typeof setTimeout> | null = null
 
-    const connect = () => {
+    // `stable` is what earns a fresh backoff: only a connection that held for a
+    // while counts, so a socket losing the one-per-user race backs off instead
+    // of fighting for the slot.
+    const scheduleReconnect = (stable: boolean) => {
+      if (cancelled) return
+
+      if (stable) attempts = 0
+
+      const delay = Math.min(
+        BASE_RECONNECT_DELAY * 2 ** attempts,
+        MAX_RECONNECT_DELAY,
+      )
+      attempts += 1
+      timer = setTimeout(() => void connect(), delay)
+    }
+
+    const connect = async () => {
       if (cancelled) return
 
       setStatus('connecting')
 
-      // The access_token cookie rides along on the upgrade request, so the
-      // socket needs no auth handshake of its own.
-      const socket = new WebSocket(socketUrl())
+      // Refresh first if the token has aged out: the upgrade is rejected
+      // outright with a stale one, and a reconnect would present the very same
+      // token, so the socket would retry forever instead of recovering.
+      const token = await ensureAccessToken()
+      if (cancelled) return
+
+      if (token === null) {
+        // Signed out, or the refresh failed. The route guard handles the former;
+        // retrying covers the latter.
+        setStatus('closed')
+        scheduleReconnect(false)
+        return
+      }
+
+      const socket = new WebSocket(socketUrl(), [WS_AUTH_PROTOCOL, token])
       socketRef.current = socket
       const openedAt = Date.now()
 
@@ -121,6 +170,8 @@ export function useChatSocket({
               sender_id: payload.sender_id,
               content: payload.content ?? '',
               sent_at: payload.sent_at ?? new Date().toISOString(),
+              // A message is never born read; the receipt arrives separately.
+              read_at: null,
             })
             break
 
@@ -128,9 +179,17 @@ export function useChatSocket({
             handlers.current.onChatCreated?.()
             break
 
+          case WSKind.MessagesRead:
+            if (!payload.chat_id || !payload.read_at) return
+
+            handlers.current.onMessagesRead?.(payload.chat_id, payload.read_at)
+            break
+
           case WSKind.Error:
           case WSKind.InvalidJSON:
-            handlers.current.onError?.(payload.message ?? 'Something went wrong')
+            handlers.current.onError?.(
+              payload.message ?? 'Something went wrong',
+            )
             break
         }
       }
@@ -141,23 +200,14 @@ export function useChatSocket({
         if (cancelled || socketRef.current !== null) return
 
         setStatus('closed')
-
-        // Only a connection that held for a while earns a fresh backoff.
-        if (Date.now() - openedAt >= STABLE_CONNECTION_MS) attempts = 0
-
-        const delay = Math.min(
-          BASE_RECONNECT_DELAY * 2 ** attempts,
-          MAX_RECONNECT_DELAY,
-        )
-        attempts += 1
-        timer = setTimeout(connect, delay)
+        scheduleReconnect(Date.now() - openedAt >= STABLE_CONNECTION_MS)
       }
 
       // An error is always followed by a close, which owns the reconnect.
       socket.onerror = () => socket.close()
     }
 
-    connect()
+    void connect()
 
     return () => {
       cancelled = true
@@ -168,19 +218,22 @@ export function useChatSocket({
     }
   }, [enabled])
 
-  const sendMessage = useCallback((chatId: string, content: string): boolean => {
-    const socket = socketRef.current
-    if (!socket || socket.readyState !== WebSocket.OPEN) return false
+  const sendMessage = useCallback(
+    (chatId: string, content: string): boolean => {
+      const socket = socketRef.current
+      if (!socket || socket.readyState !== WebSocket.OPEN) return false
 
-    socket.send(
-      JSON.stringify({
-        kind: WSKind.SendMessage,
-        chat_id: chatId,
-        content,
-      }),
-    )
-    return true
-  }, [])
+      socket.send(
+        JSON.stringify({
+          kind: WSKind.SendMessage,
+          chat_id: chatId,
+          content,
+        }),
+      )
+      return true
+    },
+    [],
+  )
 
   return { status, sendMessage }
 }

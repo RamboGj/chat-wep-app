@@ -16,15 +16,16 @@ const (
 	MaxMessageLimit     = 100
 )
 
-// ChatSummary is one of the caller's chats: who else is in it and a preview of
-// the last message. LastMessage/LastMessageAt are nil for a chat with no
-// messages yet.
+// ChatSummary is one of the caller's chats: who else is in it, a preview of the
+// last message, and how many messages the caller has not read. LastMessage/
+// LastMessageAt are nil for a chat with no messages yet.
 type ChatSummary struct {
 	ChatID        uuid.UUID  `json:"chat_id"`
 	OtherUserID   uuid.UUID  `json:"other_user_id"`
 	OtherUsername string     `json:"other_username"`
 	LastMessage   *string    `json:"last_message"`
 	LastMessageAt *time.Time `json:"last_message_at"`
+	UnreadCount   int64      `json:"unread_count"`
 }
 
 type ChatService struct {
@@ -52,6 +53,7 @@ func (cs *ChatService) ListChatsForUser(ctx context.Context, userID uuid.UUID) (
 			OtherUserID:   row.OtherUserID,
 			OtherUsername: row.OtherUsername,
 			LastMessageAt: row.LastMessageAt,
+			UnreadCount:   row.UnreadCount,
 		}
 		if row.LastMessage.Valid {
 			content := row.LastMessage.String
@@ -110,4 +112,37 @@ func (cs *ChatService) ListMessages(ctx context.Context, chatID, userID uuid.UUI
 	}
 
 	return messages, nil
+}
+
+// MarkChatRead stamps read_at on every message in the chat the caller did not
+// send and has not already read. Returns how many it marked and the timestamp
+// written; the timestamp is nil when there was nothing to mark, which the
+// caller uses to skip the fan-out.
+//
+// Participation is a separate statement rather than an EXISTS inside the
+// UPDATE, mirroring ListMessages: a non-participant must get 404, and an UPDATE
+// that touches zero rows cannot tell "not allowed" from "nothing to do". That
+// is the opposite of CreateMessage, where the single-statement form is right
+// precisely because both outcomes mean "don't write".
+func (cs *ChatService) MarkChatRead(ctx context.Context, chatID, callerID uuid.UUID) (int64, *time.Time, error) {
+	participates, err := cs.IsParticipant(ctx, chatID, callerID)
+	if err != nil {
+		return 0, nil, err
+	}
+	if !participates {
+		return 0, nil, ErrNotParticipant
+	}
+
+	row, err := cs.queries.MarkChatRead(ctx, pgstore.MarkChatReadParams{
+		ChatID:   chatID,
+		SenderID: callerID,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	if row.MarkedCount == 0 {
+		return 0, nil, nil
+	}
+
+	return row.MarkedCount, &row.ReadAt, nil
 }

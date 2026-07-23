@@ -129,7 +129,12 @@ SELECT c.id AS chat_id,
        u.id AS other_user_id,
        u.username AS other_username,
        last.content AS last_message,
-       last.sent_at AS last_message_at
+       last.sent_at AS last_message_at,
+       (SELECT COUNT(*)
+        FROM messages um
+        WHERE um.chat_id = c.id
+          AND um.sender_id <> $1
+          AND um.read_at IS NULL) AS unread_count
 FROM chat_participants self
 JOIN chats c ON c.id = self.chat_id
 JOIN chat_participants other
@@ -153,14 +158,19 @@ type ListChatsForUserRow struct {
 	OtherUsername string      `json:"other_username"`
 	LastMessage   pgtype.Text `json:"last_message"`
 	LastMessageAt *time.Time  `json:"last_message_at"`
+	UnreadCount   int64       `json:"unread_count"`
 }
 
-// The caller's chats with the other participant and a last-message preview.
+// The caller's chats with the other participant, a last-message preview and the
+// caller's unread count.
 // The preview is a plain LEFT JOIN (not a LATERAL) so that sqlc infers the
 // preview columns as nullable: a chat with no messages yet still appears, with
 // last_message/last_message_at NULL.
-func (q *Queries) ListChatsForUser(ctx context.Context, userID uuid.UUID) ([]ListChatsForUserRow, error) {
-	rows, err := q.db.Query(ctx, listChatsForUser, userID)
+// The unread count is a correlated subquery rather than a JOIN … GROUP BY:
+// aggregating here would drag every other selected column into the GROUP BY.
+// It hits idx_messages_unread.
+func (q *Queries) ListChatsForUser(ctx context.Context, senderID uuid.UUID) ([]ListChatsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listChatsForUser, senderID)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +184,7 @@ func (q *Queries) ListChatsForUser(ctx context.Context, userID uuid.UUID) ([]Lis
 			&i.OtherUsername,
 			&i.LastMessage,
 			&i.LastMessageAt,
+			&i.UnreadCount,
 		); err != nil {
 			return nil, err
 		}

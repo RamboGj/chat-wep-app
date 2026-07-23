@@ -15,17 +15,18 @@ func (api *Api) BindRoutes() {
 	api.Router.Use(middleware.Recoverer)
 	api.Router.Use(middleware.Logger)
 
-	// Auth rides on cookies, so AllowCredentials is required and the origin
-	// list must be explicit — the "*" wildcard is invalid alongside it.
-	// Handling OPTIONS here also gives preflights a 204 instead of chi's 404,
-	// since none of the routes below register an OPTIONS handler.
+	// Auth rides on the Authorization header, which is not a CORS-safelisted
+	// request header — without it here every authenticated call fails its
+	// preflight. No cookies cross the origin boundary any more, so
+	// AllowCredentials stays off. Handling OPTIONS here also gives preflights a
+	// 204 instead of chi's 404, since none of the routes below register an
+	// OPTIONS handler.
 	if len(api.AllowedOrigins) > 0 {
 		api.Router.Use(cors.Handler(cors.Options{
-			AllowedOrigins:   api.AllowedOrigins,
-			AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Accept", "Content-Type"},
-			AllowCredentials: true,
-			MaxAge:           300,
+			AllowedOrigins: api.AllowedOrigins,
+			AllowedMethods: []string{"GET", "POST", "DELETE", "OPTIONS"},
+			AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
+			MaxAge:         300,
 		}))
 	}
 
@@ -39,11 +40,12 @@ func (api *Api) BindRoutes() {
 				r.Post("/signup", api.handleSignupUser)
 				r.Post("/login", api.handleLoginUser)
 
-				// Authenticated by the refresh cookie itself, not AuthMiddleware.
+				// Authenticated by the refresh token in its body, not by
+				// AuthMiddleware.
 				r.Post("/refresh", api.handleRefreshToken)
 
-				// Clearing cookies must work even with an expired access token,
-				// so logout stays outside AuthMiddleware.
+				// Logging out must work even with an expired access token, so
+				// it stays outside AuthMiddleware.
 				r.Post("/logout", api.handleLogoutUser)
 
 				r.Group(func(r chi.Router) {
@@ -71,11 +73,12 @@ func (api *Api) BindRoutes() {
 
 				r.Get("/", api.handleListChats)
 				r.Get("/{chat_id}/messages", api.handleListMessages)
+				r.Post("/{chat_id}/read", api.handleMarkChatRead)
 			})
 
-			// The browser sends the access_token cookie on the upgrade request,
-			// so the socket needs no bespoke auth of its own.
-			r.With(api.AuthMiddleware).Get("/ws", api.handleWS)
+			// The upgrade request cannot carry an Authorization header, so the
+			// socket authenticates off Sec-WebSocket-Protocol instead.
+			r.With(api.WSAuthMiddleware).Get("/ws", api.handleWS)
 		})
 	})
 }

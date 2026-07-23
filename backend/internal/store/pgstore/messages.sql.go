@@ -20,7 +20,7 @@ WHERE EXISTS (
     FROM chat_participants
     WHERE chat_id = $1 AND user_id = $2
 )
-RETURNING id, chat_id, sender_id, content, sent_at
+RETURNING id, chat_id, sender_id, content, sent_at, read_at
 `
 
 type CreateMessageParams struct {
@@ -41,12 +41,13 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		&i.SenderID,
 		&i.Content,
 		&i.SentAt,
+		&i.ReadAt,
 	)
 	return i, err
 }
 
 const listMessages = `-- name: ListMessages :many
-SELECT id, chat_id, sender_id, content, sent_at
+SELECT id, chat_id, sender_id, content, sent_at, read_at
 FROM messages
 WHERE chat_id = $1
   AND sent_at < $2
@@ -77,6 +78,7 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]M
 			&i.SenderID,
 			&i.Content,
 			&i.SentAt,
+			&i.ReadAt,
 		); err != nil {
 			return nil, err
 		}
@@ -86,4 +88,49 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]M
 		return nil, err
 	}
 	return items, nil
+}
+
+const markChatRead = `-- name: MarkChatRead :one
+WITH marked AS (
+    UPDATE messages
+    SET read_at = NOW()
+    WHERE chat_id = $1
+      AND sender_id <> $2
+      AND read_at IS NULL
+    RETURNING id
+)
+SELECT COUNT(*) AS marked_count, NOW()::timestamptz AS read_at
+FROM marked
+`
+
+type MarkChatReadParams struct {
+	ChatID   uuid.UUID `json:"chat_id"`
+	SenderID uuid.UUID `json:"sender_id"`
+}
+
+type MarkChatReadRow struct {
+	MarkedCount int64     `json:"marked_count"`
+	ReadAt      time.Time `json:"read_at"`
+}
+
+// Marks the caller's unread inbox for one chat. Only messages the caller did
+// NOT send, and only ones still unread, so read_at is written exactly once and
+// never moves. Participation is checked by the service before this runs.
+//
+// The UPDATE is wrapped in a CTE so the statement returns a single row however
+// many messages it touched — a bare `RETURNING read_at` returns one row per
+// updated message, which :one cannot express.
+//
+// The timestamp is re-derived with NOW() rather than aggregated out of the
+// CTE's RETURNING. NOW() is transaction_timestamp(), constant for the whole
+// statement, so it is exactly the value the UPDATE wrote — and it types as a
+// plain non-null timestamptz, which MAX(read_at) over a data-modifying CTE does
+// not (sqlc infers interface{} without a cast and NOT NULL with one, and this
+// row exists even when zero messages were marked). marked_count == 0 is what
+// the service reads as a no-op, so the timestamp is never consulted then.
+func (q *Queries) MarkChatRead(ctx context.Context, arg MarkChatReadParams) (MarkChatReadRow, error) {
+	row := q.db.QueryRow(ctx, markChatRead, arg.ChatID, arg.SenderID)
+	var i MarkChatReadRow
+	err := row.Scan(&i.MarkedCount, &i.ReadAt)
+	return i, err
 }

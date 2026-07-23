@@ -6,8 +6,8 @@ one socket per **user**, and messages are routed by `chat_id`.
 
 ## Topology
 
-- Each user opens **one** WebSocket at `GET /api/v1/ws` (behind `AuthMiddleware` → userID from
-  the `access_token` cookie).
+- Each user opens **one** WebSocket at `GET /api/v1/ws` (behind `WSAuthMiddleware` → userID
+  from the access token carried in `Sec-WebSocket-Protocol`; see `jwt-auth.md`).
 - The hub keeps `Clients map[uuid.UUID]*Client` (userID → connection).
 - An inbound message names a `chat_id`. The hub verifies the sender participates in that chat,
   persists the message, looks up the chat's participants, and pushes the stored message to each

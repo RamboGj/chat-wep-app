@@ -45,7 +45,7 @@ export function SignupForm({ onCreated, ...rest }: SignupFormProps) {
     signup.mutate(
       { username, email, password },
       {
-        // No cookies are minted by signup, so hand off to the log in tab.
+        // No tokens are minted by signup, so hand off to the log in tab.
         onSuccess: () => onCreated(email),
         onError: (error) => setErrors(requestFieldErrors(error)),
       },

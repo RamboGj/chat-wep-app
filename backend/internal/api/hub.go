@@ -11,7 +11,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// MessageKind is the envelope discriminator carried over the socket.
+// MessageKind is the envelope discriminator carried over the socket. The
+// frontend mirrors these positionally, so the iota is append-only: renumbering
+// a kind silently routes frames to the wrong handler in every tab still running
+// the old build.
 type MessageKind int
 
 const (
@@ -20,6 +23,7 @@ const (
 	KindError                          // server → sender
 	KindInvalidJSON                    // server → sender
 	KindChatCreated                    // server → inviter: an invite of theirs was accepted
+	KindMessagesRead                   // server → the other participants of a chat
 )
 
 // WSMessage is the single envelope in both directions.
@@ -32,6 +36,14 @@ type WSMessage struct {
 	ID       uuid.UUID `json:"id,omitempty"`
 	SenderID uuid.UUID `json:"sender_id,omitempty"`
 	SentAt   time.Time `json:"sent_at,omitempty"`
+
+	// Populated on KindMessagesRead: every message in the chat sent at or
+	// before this is now read. A timestamp rather than a list of ids, because
+	// the list is unbounded — a 500-message backlog would put 500 uuids in one
+	// frame and the hub drops any client whose Send buffer backs up — and
+	// because it closes the race where a message created after the UPDATE is
+	// pushed before the receipt: such a message necessarily has a later sent_at.
+	ReadAt *time.Time `json:"read_at,omitempty"`
 
 	// Populated on KindError / KindInvalidJSON.
 	Message string `json:"message,omitempty"`

@@ -71,23 +71,22 @@ func (api *Api) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	api.Jwt.SetAuthCookies(w, access, refresh)
-
 	_ = jsonutils.EncodeJson(w, r, http.StatusOK, map[string]any{
-		"message": "logged in successfully",
+		"access_token":  access,
+		"refresh_token": refresh,
+		"token_type":    "Bearer",
+		"expires_in":    int(api.Jwt.AccessTTL.Seconds()),
 	})
 }
 
 func (api *Api) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(jwtutils.RefreshCookieName)
+	data, problems, err := jsonutils.DecodeValidJson[user.RefreshTokenRequest](r)
 	if err != nil {
-		_ = jsonutils.EncodeJson(w, r, http.StatusUnauthorized, map[string]any{
-			"error": "missing refresh token",
-		})
+		_ = jsonutils.EncodeJson(w, r, http.StatusUnprocessableEntity, problems)
 		return
 	}
 
-	userID, err := api.Jwt.Parse(cookie.Value, jwtutils.RefreshToken)
+	userID, err := api.Jwt.Parse(data.RefreshToken, jwtutils.RefreshToken)
 	if err != nil {
 		_ = jsonutils.EncodeJson(w, r, http.StatusUnauthorized, map[string]any{
 			"error": "invalid or expired refresh token",
@@ -103,16 +102,21 @@ func (api *Api) handleRefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	api.Jwt.SetAccessCookie(w, access)
-
+	// The refresh token is not rotated: it stays valid for its full TTL and the
+	// client keeps the copy it already holds.
 	_ = jsonutils.EncodeJson(w, r, http.StatusOK, map[string]any{
-		"message": "token refreshed successfully",
+		"access_token": access,
+		"token_type":   "Bearer",
+		"expires_in":   int(api.Jwt.AccessTTL.Seconds()),
 	})
 }
 
+// handleLogoutUser exists so the client has one endpoint to call, but it cannot
+// actually end the session: the tokens are stateless and carry no server-side
+// record to delete. Discarding them client-side is what logs the user out, and
+// a token copied off the device before then stays valid until it expires. Add a
+// revocation table (jti + revoked_at, checked in /refresh) if that matters.
 func (api *Api) handleLogoutUser(w http.ResponseWriter, r *http.Request) {
-	api.Jwt.ClearAuthCookies(w)
-
 	_ = jsonutils.EncodeJson(w, r, http.StatusOK, map[string]any{
 		"message": "logged out successfully",
 	})

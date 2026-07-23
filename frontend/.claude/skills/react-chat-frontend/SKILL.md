@@ -37,8 +37,8 @@ skill defines *how*.
 
 The dev server proxies `/api` to the Go backend (`vite.config.ts`) with `changeOrigin: false`
 and `ws: true`. **Do not "fix" `changeOrigin`** — preserving the `Origin` header is what lets
-the backend's WebSocket upgrade check pass, and staying same-origin is what lets the httpOnly
-auth cookies through without CORS.
+the backend's WebSocket upgrade check pass. Staying same-origin also means local dev needs no
+CORS setup at all.
 
 ## Project structure
 
@@ -50,6 +50,7 @@ frontend/src/
 ├── routes/                        # (current) TanStack file-based routes + routeTree.gen.ts — being removed
 ├── lib/                           # cross-cutting, framework-level, domain-free
 │   ├── api.ts                     # apiFetch + ApiError + the 401-refresh-retry
+│   ├── auth-tokens.ts             # the bearer tokens: storage, expiry check
 │   ├── query-client.ts            # the QueryClient singleton
 │   ├── query-keys.ts              # every cache key in the app
 │   └── format.ts                  # pure display helpers (initials, avatarColor, …)
@@ -72,9 +73,15 @@ modules.
 ## Golden-path conventions (non-negotiable)
 
 1. **Every request goes through `apiFetch`** (`@/lib/api`). Never call `fetch` directly for
-   API routes. `apiFetch` sets `credentials: 'include'`, serializes the body, parses errors
-   into `ApiError`, and — on a `401` — refreshes the access cookie once and retries. Auth
-   endpoints pass `skipRefresh: true` so they don't recurse.
+   API routes. `apiFetch` attaches `Authorization: Bearer <access token>`, serializes the
+   body, parses errors into `ApiError`, and — on a `401` — refreshes the access token once and
+   retries. Auth endpoints pass `skipRefresh: true` so they don't recurse.
+
+   **Auth is a bearer token in `localStorage` (`@/lib/auth-tokens`), not a cookie**, and must
+   stay that way: the frontend and API are on unrelated registrable domains, so a cookie
+   between them is third-party and WebKit drops it — which locked every iOS browser out of the
+   app. The socket cannot send an `Authorization` header, so it passes the token as the
+   subprotocol after the `'bearer'` sentinel. See `references/realtime.md`.
 
    The one legitimate exception is the direct-to-bucket image `PUT`, which is not an API route
    and needs `XMLHttpRequest` for upload progress.

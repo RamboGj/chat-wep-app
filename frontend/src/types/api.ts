@@ -6,6 +6,18 @@ export interface User {
   email: string
 }
 
+/** api.handleLoginUser — the session, now that it is not a cookie. */
+export interface AuthTokens {
+  access_token: string
+  refresh_token: string
+  token_type: string
+  /** Lifetime of the access token in seconds. */
+  expires_in: number
+}
+
+/** api.handleRefreshToken — the refresh token is not rotated, so none comes back. */
+export type RefreshedAccessToken = Omit<AuthTokens, 'refresh_token'>
+
 /** services.ChatSummary */
 export interface ChatSummary {
   chat_id: string
@@ -13,6 +25,8 @@ export interface ChatSummary {
   other_username: string
   last_message: string | null
   last_message_at: string | null
+  /** Messages in this chat from the other participant that we have not read. */
+  unread_count: number
 }
 
 /** services.FriendView */
@@ -37,4 +51,9 @@ export interface Message {
   sender_id: string
   content: string
   sent_at: string
+  /**
+   * When the first participant other than the sender opened the chat with this
+   * message already in it. Written once, so it never moves. Null = unread.
+   */
+  read_at: string | null
 }

@@ -27,7 +27,7 @@ the specs are the source of truth for *what* to build; this skill is the source 
 | DB driver / pool | `github.com/jackc/pgx/v5` (`pgxpool`) |
 | Query codegen | **sqlc** (`sqlc.yml`, `sql_package: pgx/v5`) |
 | Migrations | **tern** |
-| Auth | **JWT** access + refresh (`github.com/golang-jwt/jwt/v5`), httpOnly cookies, bcrypt password hashing |
+| Auth | **JWT** access + refresh (`github.com/golang-jwt/jwt/v5`), bearer tokens, bcrypt password hashing |
 | Real-time | `github.com/gorilla/websocket` — single multiplexed hub |
 | Env loading | `github.com/joho/godotenv` |
 | DB | PostgreSQL 17 (via `docker-compose.yaml`) |
@@ -48,7 +48,7 @@ backend/
 │   ├── api/                   # HTTP layer (chi). One Api struct is the receiver for every handler.
 │   │   ├── api.go             # Api struct: Router + all services + JWT + Hub + WsUpgrader
 │   │   ├── routes.go          # BindRoutes: middleware chain + route tree
-│   │   ├── middleware.go      # AuthMiddleware (reads access_token cookie → userID in ctx)
+│   │   ├── middleware.go      # AuthMiddleware (reads the bearer access token → userID in ctx)
 │   │   └── *_handlers.go      # one file per resource (auth, friends, chats, ws)
 │   ├── usecase/<entity>/      # request DTOs implementing validator.Validator (Valid(ctx) Evaluator)
 │   ├── services/              # business logic, one service per entity, own sentinel errors
@@ -59,7 +59,7 @@ backend/
 │   │   └── migrations/tern.conf
 │   ├── jsonutils/             # EncodeJson / DecodeValidJson generics
 │   ├── validator/             # Validator interface + Evaluator (field→message map)
-│   └── jwtutils/              # token mint/parse, cookie helpers
+│   └── jwtutils/              # token mint/parse
 ├── specs/                     # per-feature implementation specs (WHAT to build)
 ├── docker-compose.yaml
 ├── .air.toml
@@ -98,15 +98,19 @@ backend/
 go-bid is the pattern base, but this project differs in three ways:
 
 - **Auth is JWT, not `scs` sessions.** go-bid uses `alexedwards/scs` Postgres-backed session
-  cookies. Here we use short-lived **access** + longer **refresh** JWTs delivered as httpOnly
-  cookies (stateless — no session/token table). `AuthMiddleware` verifies the `access_token`
-  cookie; `/auth/refresh` mints a new access token from a valid `refresh_token` cookie; logout
-  clears both cookies. See `references/jwt-auth.md`.
+  cookies. Here we use short-lived **access** + longer **refresh** JWTs returned in the
+  response body and sent back as **bearer tokens** (stateless — no session/token table).
+  `AuthMiddleware` verifies `Authorization: Bearer <access>`; `/auth/refresh` mints a new
+  access token from a refresh token in the request body; logout is client-side.
+  **Do not "restore" cookie auth** — the frontend and the API are on unrelated registrable
+  domains, so any cookie between them is third-party and WebKit drops it, which locked every
+  iOS browser out of the app. See `references/jwt-auth.md`.
 
 - **The WebSocket hub is a single multiplexed connection per user**, not one socket per room.
   go-bid opens one socket per auction. Here each user opens **one** `/ws` socket; envelopes
   carry a `chat_id` and the hub fans messages out to the connected participants of that chat.
-  See `references/realtime-hub.md`.
+  The upgrade authenticates off `Sec-WebSocket-Protocol`, since the browser's WebSocket API
+  cannot set an `Authorization` header. See `references/realtime-hub.md`.
 
 - **`users` schema** uses `username` (not go-bid's `user_name`) and has **no `bio`** column.
 
@@ -115,7 +119,7 @@ go-bid is the pattern base, but this project differs in three ways:
 - `references/architecture.md` — the layered flow end-to-end with a worked request trace.
 - `references/code-patterns.md` — copy-ready snippets: jsonutils, validator, a DTO, a service,
   a handler, a sqlc query, a tern migration, sqlc.yml, docker-compose, makefile, .air.toml.
-- `references/jwt-auth.md` — token/cookie strategy, middleware, endpoints.
+- `references/jwt-auth.md` — bearer-token strategy, middleware, WS handshake, endpoints.
 - `references/realtime-hub.md` — the multiplexed Hub/Client design adapted from go-bid's room.
 
 ## Commands

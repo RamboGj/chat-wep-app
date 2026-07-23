@@ -8,6 +8,39 @@ interface MessageListProps {
   isLoading: boolean
 }
 
+/**
+ * Always a double check — there is no single-check state to render. Nothing is
+ * inserted optimistically, so every message on screen is already the server's
+ * echo; "sent but not yet acknowledged" is a state this UI can never be in.
+ *
+ * Mint rather than brand for the read state: own bubbles *are* the brand
+ * gradient, so a brand-coloured tick would be invisible on its own background.
+ */
+function ReadTicks({ readAt }: { readAt: string | null }) {
+  const read = readAt !== null
+
+  return (
+    <svg
+      width="17"
+      height="16"
+      viewBox="0 0 17 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role="img"
+      aria-label={read ? 'Read' : 'Sent'}
+      className={`inline-block shrink-0 align-[-0.2em] ${
+        read ? 'text-success-500' : 'text-white/45'
+      }`}
+    >
+      <path d="M1 8.5 L4.2 12 L10.5 4.5" />
+      <path d="M6.5 8.5 L9.7 12 L16 4.5" />
+    </svg>
+  )
+}
+
 export function MessageList({ messages, currentUserId, isLoading }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -50,8 +83,11 @@ export function MessageList({ messages, currentUserId, isLoading }: MessageListP
               }`}
             >
               <p className="whitespace-pre-wrap break-words">{message.content}</p>
-              <p className="mt-1 text-right text-[10.5px] opacity-60">
-                {formatMessageTime(message.sent_at)}
+              {/* Ticks only on our own bubbles: a read receipt on someone
+                  else's message tells the reader nothing. */}
+              <p className="mt-1 flex items-center justify-end gap-1 text-right text-[10.5px]">
+                <span className="opacity-60">{formatMessageTime(message.sent_at)}</span>
+                {mine && <ReadTicks readAt={message.read_at} />}
               </p>
             </div>
           </div>

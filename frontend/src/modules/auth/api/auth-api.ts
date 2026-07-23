@@ -1,5 +1,5 @@
 import { apiFetch } from '@/lib/api'
-import type { User } from '@/types/api'
+import type { AuthTokens, User } from '@/types/api'
 
 export interface SignupPayload {
   username: string
@@ -13,7 +13,7 @@ export interface LoginPayload {
 }
 
 export const authApi = {
-  /** Creates the account. It does not log the user in — no cookies are set. */
+  /** Creates the account. It does not log the user in — no tokens are issued. */
   signup: (payload: SignupPayload) =>
     apiFetch<{ user_id: string }>('/auth/signup', {
       method: 'POST',
@@ -21,14 +21,18 @@ export const authApi = {
       skipRefresh: true,
     }),
 
-  /** Sets the httpOnly access + refresh cookies. */
+  /** Returns the tokens. Storing them is `useLogin`'s job, not this module's. */
   login: (payload: LoginPayload) =>
-    apiFetch<{ message: string }>('/auth/login', {
+    apiFetch<AuthTokens>('/auth/login', {
       method: 'POST',
       body: payload,
       skipRefresh: true,
     }),
 
+  /**
+   * Stateless tokens leave the server nothing to revoke, so this only exists to
+   * keep the call site honest — discarding the tokens is what ends the session.
+   */
   logout: () =>
     apiFetch<{ message: string }>('/auth/logout', {
       method: 'POST',

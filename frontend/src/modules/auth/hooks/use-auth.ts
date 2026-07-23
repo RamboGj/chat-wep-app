@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryOptions } from '@tanstack/react-query'
 import { ApiError } from '@/lib/api'
+import { clearTokens, hasSession, setTokens } from '@/lib/auth-tokens'
 import { queryKeys } from '@/lib/query-keys'
 import { authApi, type LoginPayload, type SignupPayload } from '../api/auth-api'
 import type { User } from '@/types/api'
@@ -15,6 +16,10 @@ import type { User } from '@/types/api'
 export const currentUserQueryOptions = queryOptions<User | null>({
   queryKey: queryKeys.currentUser,
   queryFn: async () => {
+    // With no token there is nothing to authenticate with, and asking would
+    // only spend a round trip to be told so.
+    if (!hasSession()) return null
+
     try {
       return await authApi.me()
     } catch (error) {
@@ -35,7 +40,11 @@ export function useLogin() {
 
   return useMutation({
     mutationFn: (payload: LoginPayload) => authApi.login(payload),
-    onSuccess: async () => {
+    onSuccess: async (tokens) => {
+      // Store before invalidating: the refetch this triggers is the first
+      // request that needs to send the new token.
+      setTokens({ access: tokens.access_token, refresh: tokens.refresh_token })
+
       await queryClient.invalidateQueries({
         queryKey: queryKeys.currentUser,
         refetchType: 'all',
@@ -45,7 +54,7 @@ export function useLogin() {
 }
 
 /**
- * Creates the account only. The backend mints no cookies here, and the user is
+ * Creates the account only. The backend mints no tokens here, and the user is
  * sent to the log in tab to authenticate deliberately.
  */
 export function useSignup() {
@@ -59,7 +68,10 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: () => authApi.logout(),
+    // onSettled, not onSuccess: the request is a formality the server cannot
+    // act on, so a failed one must not strand the user in a signed-in shell.
     onSettled: () => {
+      clearTokens()
       // Drop every cached query: none of it belongs to the next user.
       queryClient.clear()
     },

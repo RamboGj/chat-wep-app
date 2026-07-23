@@ -20,4 +20,10 @@ export const chatApi = {
 
     return res.messages.slice().reverse()
   },
+
+  /** Marks everything in the chat we did not send as read. */
+  markRead: (chatId: string) =>
+    apiFetch<{ marked: number; read_at: string | null }>(`/chats/${chatId}/read`, {
+      method: 'POST',
+    }),
 }

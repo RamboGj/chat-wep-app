@@ -155,8 +155,9 @@ double-mount. Harmless — keep or drop, but don't spend review time on it.
 
 Remove the `tanstackRouter({...})` plugin and its import. **Leave everything else alone** — the
 `@` alias, the `/api` dev proxy with `ws: true` and `changeOrigin: false`, Tailwind, and the React
-Compiler babel preset are all unrelated to routing and all load-bearing. In particular the proxy
-comment about single-origin cookies still applies.
+Compiler babel preset are all unrelated to routing and all load-bearing. In particular
+`changeOrigin: false` still matters: it preserves the `Origin` header the backend's WebSocket
+upgrade check reads.
 
 ### `ChatPage.tsx`
 
