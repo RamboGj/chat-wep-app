@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import {
   useInfiniteQuery,
   useMutation,
@@ -11,6 +11,7 @@ import { queryKeys } from '@/lib/query-keys'
 import type { ChatSummary, Message, User } from '@/types/api'
 import { chatApi } from '../api/chat-api'
 import { useChatSocket } from './use-chat-socket'
+import { useTypingIndicator } from './use-typing-indicator'
 
 export const MESSAGE_PAGE_SIZE = 20
 
@@ -165,8 +166,16 @@ interface UseChatRealtimeOptions {
 export function useChatRealtime({ enabled, currentUserId, onError }: UseChatRealtimeOptions) {
   const queryClient = useQueryClient()
 
+  const { typing, onTyping, clearTyping, clearAll } = useTypingIndicator()
+
   const applyMessage = useCallback(
     (message: Message) => {
+      // The instant, free cancellation: a message from a sender clears their
+      // indicator in that chat. It rides the same ordered socket as the typing
+      // frame, so it cannot race ahead of one. Harmless for our own echo — we
+      // never appear in our own typing state.
+      clearTyping(message.chat_id, message.sender_id)
+
       // The one write that is not page-agnostic: an inbound message is the
       // newest, so it belongs on the last page. Page 0 is the initial fetch and
       // every fetchPreviousPage prepends, so the last page is the newest one.
@@ -229,7 +238,7 @@ export function useChatRealtime({ enabled, currentUserId, onError }: UseChatReal
         queryClient.invalidateQueries({ queryKey: queryKeys.chats })
       }
     },
-    [queryClient, currentUserId],
+    [queryClient, currentUserId, clearTyping],
   )
 
   // Our invite was accepted: the chat exists now, and the other user is a
@@ -264,11 +273,20 @@ export function useChatRealtime({ enabled, currentUserId, onError }: UseChatReal
     [queryClient],
   )
 
-  return useChatSocket({
+  const socket = useChatSocket({
     enabled,
     onNewMessage: applyMessage,
     onChatCreated: applyChatCreated,
     onMessagesRead: applyMessagesRead,
+    onUserTyping: onTyping,
     onError,
   })
+
+  // The socket left `open`: typing state is unverifiable while disconnected, so
+  // drop it rather than carry a stale "typing…" through a reconnect.
+  useEffect(() => {
+    if (socket.status !== 'open') clearAll()
+  }, [socket.status, clearAll])
+
+  return { ...socket, typing }
 }

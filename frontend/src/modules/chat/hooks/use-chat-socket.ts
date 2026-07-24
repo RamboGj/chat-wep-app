@@ -18,7 +18,20 @@ export const WSKind = {
   InvalidJSON: 3,
   ChatCreated: 4,
   MessagesRead: 5,
+  Typing: 6,
+  UserTyping: 7,
 } as const
+
+/**
+ * Leading-edge, per chat: the first keystroke emits immediately (the indicator
+ * should appear as the other person starts, not 3s later), then at most one
+ * frame per interval while typing continues.
+ *
+ * NOT a trailing debounce — that fires when the user *stops*, which is the exact
+ * inverse of what the indicator means. The server's rate limit is the real cap;
+ * this only spares it the frames it would otherwise drop.
+ */
+const TYPING_THROTTLE = 3_000
 
 export interface WSMessage {
   kind: number
@@ -67,6 +80,8 @@ interface UseChatSocketOptions {
    * `readAt` is now read.
    */
   onMessagesRead?: (chatId: string, readAt: string) => void
+  /** Another participant of `chatId` is composing. Ephemeral; nothing persisted. */
+  onUserTyping?: (chatId: string, senderId: string) => void
   onError?: (message: string) => void
 }
 
@@ -80,11 +95,17 @@ export function useChatSocket({
   onNewMessage,
   onChatCreated,
   onMessagesRead,
+  onUserTyping,
   onError,
 }: UseChatSocketOptions) {
   const [status, setStatus] = useState<SocketStatus>('closed')
 
   const socketRef = useRef<WebSocket | null>(null)
+
+  // Leading-edge throttle state, per chat: the epoch of the last frame we sent.
+  // A ref, not state — throttling must not re-render, and the map outlives every
+  // render.
+  const lastTypingSent = useRef(new Map<string, number>())
 
   // Handlers are read through a ref so a new callback identity on every render
   // never tears the socket down.
@@ -92,11 +113,12 @@ export function useChatSocket({
     onNewMessage,
     onChatCreated,
     onMessagesRead,
+    onUserTyping,
     onError,
   })
   useEffect(() => {
-    handlers.current = { onNewMessage, onChatCreated, onMessagesRead, onError }
-  }, [onNewMessage, onChatCreated, onMessagesRead, onError])
+    handlers.current = { onNewMessage, onChatCreated, onMessagesRead, onUserTyping, onError }
+  }, [onNewMessage, onChatCreated, onMessagesRead, onUserTyping, onError])
 
   useEffect(() => {
     if (!enabled) return
@@ -185,6 +207,12 @@ export function useChatSocket({
             handlers.current.onMessagesRead?.(payload.chat_id, payload.read_at)
             break
 
+          case WSKind.UserTyping:
+            if (!payload.chat_id || !payload.sender_id) return
+
+            handlers.current.onUserTyping?.(payload.chat_id, payload.sender_id)
+            break
+
           case WSKind.Error:
           case WSKind.InvalidJSON:
             handlers.current.onError?.(
@@ -230,10 +258,32 @@ export function useChatSocket({
           content,
         }),
       )
+
+      // Reset the throttle so the first keystroke of the next sentence emits
+      // immediately; otherwise the indicator arrives late exactly when the
+      // conversation is liveliest. The message itself already cleared the
+      // receiver's indicator, so re-emitting at once is correct.
+      lastTypingSent.current.delete(chatId)
       return true
     },
     [],
   )
 
-  return { status, sendMessage }
+  // Throttle lives in the hook, not the composer, so every call site is
+  // throttled by construction and no future caller can forget.
+  const sendTyping = useCallback((chatId: string) => {
+    const socket = socketRef.current
+    // Never queue when the socket is closed: a typing frame delivered after
+    // reconnection describes a moment that has passed.
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+
+    const now = Date.now()
+    const last = lastTypingSent.current.get(chatId) ?? 0
+    if (now - last < TYPING_THROTTLE) return
+
+    lastTypingSent.current.set(chatId, now)
+    socket.send(JSON.stringify({ kind: WSKind.Typing, chat_id: chatId }))
+  }, [])
+
+  return { status, sendMessage, sendTyping }
 }

@@ -32,7 +32,7 @@ export function ChatPage() {
 
   const closeNewChat = () => setShowNewChat(false)
 
-  const { status, sendMessage } = useChatRealtime({
+  const { status, sendMessage, sendTyping, typing } = useChatRealtime({
     enabled: Boolean(user),
     currentUserId: user?.id,
     onError: handleSocketError,
@@ -41,6 +41,12 @@ export function ChatPage() {
   const selectedChat = chats.find((chat) => chat.chat_id === selectedChatId) ?? null
 
   const activeChatId = selectedChat?.chat_id ?? null
+
+  // 1:1 today, so "someone typing" is just the other participant. Keying by user
+  // in the hook is what makes this work unchanged when group chats land.
+  const otherTyping =
+    selectedChat != null &&
+    (typing.get(selectedChat.chat_id)?.has(selectedChat.other_user_id) ?? false)
 
   const {
     messages,
@@ -55,6 +61,10 @@ export function ChatPage() {
   function handleSend(content: string) {
     if (!activeChatId) return false
     return sendMessage(activeChatId, content)
+  }
+
+  function handleTyping() {
+    if (activeChatId) sendTyping(activeChatId)
   }
 
   function handleLogout() {
@@ -180,6 +190,7 @@ export function ChatPage() {
           search={search}
           onSearchChange={setSearch}
           isLoading={chatsLoading}
+          typing={typing}
           className={activeChatId ? 'hidden md:flex' : 'flex'}
         />
 
@@ -243,9 +254,11 @@ export function ChatPage() {
                 hasOlder={hasOlder}
                 isLoadingOlder={isLoadingOlder}
                 loadOlder={loadOlder}
+                isTyping={otherTyping}
+                typingName={selectedChat.other_username}
               />
 
-              <MessageComposer onSend={handleSend} status={status} />
+              <MessageComposer onSend={handleSend} onTyping={handleTyping} status={status} />
             </>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 text-gray-300">

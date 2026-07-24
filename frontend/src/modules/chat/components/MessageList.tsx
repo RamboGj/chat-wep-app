@@ -10,6 +10,10 @@ interface MessageListProps {
   hasOlder: boolean
   isLoadingOlder: boolean
   loadOlder: () => void
+  /** The other participant is composing. Ephemeral; expires on its own TTL. */
+  isTyping: boolean
+  /** Name shown in the indicator, e.g. "Ada is typing". */
+  typingName: string
 }
 
 /**
@@ -52,6 +56,8 @@ export function MessageList({
   hasOlder,
   isLoadingOlder,
   loadOlder,
+  isTyping,
+  typingName,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -145,7 +151,9 @@ export function MessageList({
     )
   }
 
-  if (messages.length === 0) {
+  // Keep falling through when the other person is typing into an empty chat, so
+  // the indicator still shows before the first message exists.
+  if (messages.length === 0 && !isTyping) {
     return (
       <div className="flex flex-1 items-center justify-center font-manrope text-sm text-gray-300">
         No messages yet — say hello 👋
@@ -205,6 +213,25 @@ export function MessageList({
           </div>
         )
       })}
+
+      {/* An incoming-style bubble below the last message, inside the scroll
+          container so it sits with the thread and follows it to the bottom.
+          Mirrors the other participant's bubble (left-aligned, gray-500) so it
+          reads as a message in progress rather than a caption. aria-live="polite"
+          announces once on appearance because the element mounts and unmounts
+          rather than re-rendering; the dots themselves are decorative. */}
+      {isTyping && (
+        <div role="status" aria-live="polite" className="flex animate-showContent justify-start">
+          <span className="sr-only">{typingName} is typing</span>
+          <div className="rounded-2xl bg-gray-500 px-4 py-3.5 text-gray-100" aria-hidden>
+            <span className="typing-dots">
+              <span />
+              <span />
+              <span />
+            </span>
+          </div>
+        </div>
+      )}
 
       <div ref={bottomRef} />
     </div>
