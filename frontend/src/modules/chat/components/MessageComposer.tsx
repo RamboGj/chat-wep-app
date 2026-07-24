@@ -3,12 +3,15 @@ import type { SocketStatus } from '../hooks/use-chat-socket'
 
 interface MessageComposerProps {
   onSend: (content: string) => boolean
+  /** Emit a typing frame; throttled inside the hook, so calling on every
+      keystroke is fine. */
+  onTyping: () => void
   status: SocketStatus
 }
 
 const MAX_HEIGHT = 120
 
-export function MessageComposer({ onSend, status }: MessageComposerProps) {
+export function MessageComposer({ onSend, onTyping, status }: MessageComposerProps) {
   const [draft, setDraft] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -59,6 +62,9 @@ export function MessageComposer({ onSend, status }: MessageComposerProps) {
         onChange={(event) => {
           setDraft(event.target.value)
           resize()
+          // Guarded on non-empty: deleting back to an empty box sends nothing
+          // and cancels nothing — the lease lapses on its own.
+          if (event.target.value.trim()) onTyping()
         }}
         onKeyDown={handleKeyDown}
         className="scroll-surface max-h-30 min-w-0 flex-1 resize-none rounded-2xl bg-gray-600 px-4 py-3 font-manrope text-base text-gray-100 ring-1 ring-gray-500 transition-all duration-500 placeholder:font-manrope placeholder:text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-60 disabled:hover:bg-gray-600 md:text-sm"

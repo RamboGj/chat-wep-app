@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +27,40 @@ type Client struct {
 	Conn   *websocket.Conn
 	Send   chan WSMessage
 	UserID uuid.UUID
+
+	// typing rate-limits inbound typing frames. Only ReadPump touches it, so it
+	// needs no mutex.
+	typing typingLimiter
+}
+
+const (
+	typingRefillPerSec = 0.5 // 1 token per 2s
+	typingBurst        = 3.0
+)
+
+// typingLimiter is a token bucket sized so a well-behaved client (one frame per
+// TYPING_THROTTLE) never sees it, while a client sending per-keystroke gets ~1
+// frame in 30 through. Burst 3 absorbs the reconnect case, where a few frames
+// can legitimately arrive close together.
+type typingLimiter struct {
+	tokens float64
+	last   time.Time
+}
+
+func (l *typingLimiter) allow() bool {
+	now := time.Now()
+	if l.last.IsZero() {
+		l.last = now
+		l.tokens = typingBurst
+	}
+	l.tokens = math.Min(typingBurst, l.tokens+now.Sub(l.last).Seconds()*typingRefillPerSec)
+	l.last = now
+
+	if l.tokens < 1 {
+		return false
+	}
+	l.tokens--
+	return true
 }
 
 // ReadPump pumps messages from the socket to the hub. A malformed payload is
@@ -60,6 +95,14 @@ func (c *Client) ReadPump() {
 				slog.Warn("websocket closed unexpectedly", "error", err, "user_id", c.UserID)
 			}
 			return
+		}
+
+		// Drop an over-limit typing frame here, on the abusive socket's own
+		// goroutine, before it costs the hub a channel send and a scheduling
+		// slot. Silently: an error response would amplify the very flood it means
+		// to stop. The client throttle is advisory; this is the limit that holds.
+		if msg.Kind == KindTyping && !c.typing.allow() {
+			continue
 		}
 
 		// SenderID is taken from the authenticated socket, never from the payload.

@@ -89,6 +89,55 @@ html {
   }
 }
 
+/* Typing indicator: three dots that pulse in sequence via staggered
+   animation-delay, driven by CSS rather than a JS timer. Sized for the
+   incoming-style bubble in the message thread. */
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.typing-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background-color: currentColor;
+  opacity: 0.55;
+  animation: typingDot 1.2s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typingDot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* Reduced motion: no bounce, just a static "…" of three steady dots. */
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots span {
+    animation: none;
+    opacity: 0.7;
+    transform: none;
+  }
+}
+
 /* :root {
   --text: #6b6375;
   --text-h: #08060d;

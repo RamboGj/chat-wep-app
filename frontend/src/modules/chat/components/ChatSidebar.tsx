@@ -2,6 +2,7 @@ import { Avatar } from '@/components/atoms/Avatar/Avatar'
 import { formatChatTime } from '@/lib/format'
 import { InvitesPanel } from '@/modules/friends/components/InvitesPanel'
 import type { ChatSummary } from '@/types/api'
+import type { TypingState } from '../hooks/use-typing-indicator'
 
 interface ChatSidebarProps {
   chats: ChatSummary[]
@@ -10,6 +11,8 @@ interface ChatSidebarProps {
   search: string
   onSearchChange: (value: string) => void
   isLoading: boolean
+  /** Ephemeral typing state, chat id → the user ids typing in it. */
+  typing: TypingState
   /** Controls the pane's visibility across breakpoints; owned by the page. */
   className?: string
 }
@@ -21,6 +24,7 @@ export function ChatSidebar({
   search,
   onSearchChange,
   isLoading,
+  typing,
   className = '',
 }: ChatSidebarProps) {
   const query = search.trim().toLowerCase()
@@ -71,6 +75,10 @@ export function ChatSidebar({
               // the count and trigger the mark-read effect.
               const unread = chat.unread_count > 0 && !isSelected
 
+              // 1:1 today, so the other participant is the only one who can be
+              // typing in this row.
+              const isTyping = typing.get(chat.chat_id)?.has(chat.other_user_id) ?? false
+
               return (
                 <li key={chat.chat_id}>
                   <button
@@ -102,14 +110,21 @@ export function ChatSidebar({
                       {/* The dim grey preview is the read state; brightening it
                           is the only change unread makes to the row besides the
                           pill, so a read chat renders exactly as it did before
-                          this feature. */}
+                          this feature. Typing replaces the preview in the
+                          success token (the project's live-state colour): it
+                          reads as "live" rather than as content and does not
+                          fight the unread pill, which stays as feature 2 has it. */}
                       <div className="mt-0.5 flex items-center justify-between gap-2">
                         <p
                           className={`truncate font-manrope text-[13px] ${
-                            unread ? 'text-gray-100' : 'text-gray-300'
+                            isTyping
+                              ? 'text-success-500'
+                              : unread
+                                ? 'text-gray-100'
+                                : 'text-gray-300'
                           }`}
                         >
-                          {chat.last_message ?? 'Say hello 👋'}
+                          {isTyping ? 'typing…' : (chat.last_message ?? 'Say hello 👋')}
                         </p>
 
                         {unread && (

@@ -108,6 +108,10 @@ func (api *Api) handleRemoveFriend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The chat is gone; drop its cached roster so typing frames stop reaching the
+	// removed friend before the cache TTL would otherwise let them through.
+	api.Hub.ForgetChat(r.Context(), chatID)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

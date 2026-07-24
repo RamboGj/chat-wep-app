@@ -10,11 +10,9 @@ export function InvitesPanel() {
 
   if (invites.length === 0) return null
 
-  const pendingId = acceptInvite.isPending
-    ? acceptInvite.variables
-    : rejectInvite.isPending
-      ? rejectInvite.variables
-      : null
+  const acceptingId = acceptInvite.isPending ? acceptInvite.variables : null
+  const rejectingId = rejectInvite.isPending ? rejectInvite.variables : null
+  const pendingId = acceptingId ?? rejectingId
 
   return (
     <section className="mb-2 px-2 pt-2" aria-label="Pending invitations">
@@ -52,18 +50,34 @@ export function InvitesPanel() {
                   disabled={busy}
                   onClick={() => acceptInvite.mutate(invite.id)}
                   aria-label={`Accept invitation from ${invite.from_username}`}
-                  className="rounded-lg bg-brand-500 px-2.5 py-1.5 font-sora text-xs font-semibold text-white transition-colors duration-300 hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-center justify-center rounded-lg bg-brand-500 px-2.5 py-1.5 font-sora text-xs font-semibold text-white transition-colors duration-300 hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Accept
+                  {acceptingId === invite.id ? (
+                    <span
+                      role="status"
+                      aria-label="Accepting invitation"
+                      className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+                    />
+                  ) : (
+                    'Accept'
+                  )}
                 </button>
                 <button
                   type="button"
                   disabled={busy}
                   onClick={() => rejectInvite.mutate(invite.id)}
                   aria-label={`Reject invitation from ${invite.from_username}`}
-                  className="rounded-lg border border-white-12 px-2.5 py-1.5 font-manrope text-xs text-gray-300 transition-colors duration-300 hover:border-white-25 hover:text-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-center justify-center rounded-lg border border-white-12 px-2.5 py-1.5 font-manrope text-xs text-gray-300 transition-colors duration-300 hover:border-white-25 hover:text-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Reject
+                  {rejectingId === invite.id ? (
+                    <span
+                      role="status"
+                      aria-label="Rejecting invitation"
+                      className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+                    />
+                  ) : (
+                    'Reject'
+                  )}
                 </button>
               </div>
             </li>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
 	"backend/internal/services"
@@ -24,6 +25,8 @@ const (
 	KindInvalidJSON                    // server → sender
 	KindChatCreated                    // server → inviter: an invite of theirs was accepted
 	KindMessagesRead                   // server → the other participants of a chat
+	KindTyping                         // 6: client → server: {chat_id}
+	KindUserTyping                     // 7: server → the other participants: {chat_id, sender_id}
 )
 
 // WSMessage is the single envelope in both directions.
@@ -68,6 +71,28 @@ type Notification struct {
 // the process is serialized through it, so a hung query must not wedge the hub.
 const hubDBTimeout = 5 * time.Second
 
+// participantCacheTTL bounds how long a cached roster outlives the DB. Membership
+// is immutable today, so this only caps the two things that can drift: a deleted
+// chat, and (once feature 3 lands) a roster that can change.
+const participantCacheTTL = 10 * time.Minute
+
+type participantEntry struct {
+	ids     []uuid.UUID
+	fetched time.Time
+}
+
+// participantCache memoizes chat → participant ids. Owned by the hub goroutine
+// like Clients, so it needs no mutex.
+//
+// Membership is immutable in this codebase: participants are written once, in
+// the accept-invite transaction, and remove-friend deletes the chat outright
+// rather than editing its roster. So a hit is correct by construction today, and
+// the TTL exists only to bound an entry that outlives its chat.
+type participantCache struct {
+	entries map[uuid.UUID]participantEntry
+	ttl     time.Duration
+}
+
 // Hub is a single long-lived goroutine that owns Clients, so the map needs no
 // mutex. One socket per user; messages are routed by chat_id.
 type Hub struct {
@@ -75,7 +100,11 @@ type Hub struct {
 	Unregister chan *Client
 	Inbound    chan Inbound
 	Notify     chan Notification
+	Forget     chan uuid.UUID
 	Clients    map[uuid.UUID]*Client
+
+	// partCache is owned by Run, like Clients: only the hub goroutine touches it.
+	partCache participantCache
 
 	chatService    services.ChatService
 	messageService services.MessageService
@@ -83,11 +112,16 @@ type Hub struct {
 
 func NewHub(chatService services.ChatService, messageService services.MessageService) *Hub {
 	return &Hub{
-		Register:       make(chan *Client),
-		Unregister:     make(chan *Client),
-		Inbound:        make(chan Inbound),
-		Notify:         make(chan Notification),
-		Clients:        make(map[uuid.UUID]*Client),
+		Register:   make(chan *Client),
+		Unregister: make(chan *Client),
+		Inbound:    make(chan Inbound),
+		Notify:     make(chan Notification),
+		Forget:     make(chan uuid.UUID),
+		Clients:    make(map[uuid.UUID]*Client),
+		partCache: participantCache{
+			entries: make(map[uuid.UUID]participantEntry),
+			ttl:     participantCacheTTL,
+		},
 		chatService:    chatService,
 		messageService: messageService,
 	}
@@ -116,7 +150,22 @@ func (h *Hub) Run() {
 
 		case n := <-h.Notify:
 			h.sendTo(n.UserID, n.Msg)
+
+		case chatID := <-h.Forget:
+			delete(h.partCache.entries, chatID)
 		}
+	}
+}
+
+// ForgetChat drops a chat's cached roster. Called from HTTP handlers when a chat
+// is deleted, queued through the channel like NotifyUser so it lands on the hub
+// goroutine that owns the cache. Without it, a removed friend could still be
+// fanned typing frames until the cache entry's TTL expired.
+func (h *Hub) ForgetChat(ctx context.Context, chatID uuid.UUID) {
+	select {
+	case h.Forget <- chatID:
+	case <-ctx.Done():
+		// Request cancelled or the hub is wedged; the entry lapses on its TTL.
 	}
 }
 
@@ -152,11 +201,10 @@ func (h *Hub) handleInbound(in Inbound) {
 			return
 		}
 
-		participants, err := h.chatService.ParticipantIDs(ctx, msg.ChatID)
-		if err != nil {
+		participants, ok := h.participants(msg.ChatID)
+		if !ok {
 			// The message is already persisted; the recipient will pick it up
 			// from history. Only the live fan-out is lost.
-			slog.Error("failed to load participants for fan-out", "error", err, "chat_id", msg.ChatID)
 			return
 		}
 
@@ -171,7 +219,45 @@ func (h *Hub) handleInbound(in Inbound) {
 		for _, userID := range participants { // includes the sender → doubles as the ack
 			h.sendTo(userID, out)
 		}
+
+	case KindTyping:
+		// No DB on the common path, and no error frame ever: an over-limit
+		// sender was already dropped in ReadPump, and a bad chat_id is ignored.
+		participants, ok := h.participants(in.Msg.ChatID)
+		if !ok || !slices.Contains(participants, in.SenderID) {
+			return // not a participant, or the chat is gone: silently ignore
+		}
+
+		out := WSMessage{Kind: KindUserTyping, ChatID: in.Msg.ChatID, SenderID: in.SenderID}
+		for _, userID := range participants {
+			if userID == in.SenderID {
+				continue // unlike KindNewMessage, there is no ack to deliver
+			}
+			h.sendEphemeral(userID, out)
+		}
 	}
+}
+
+// participants returns a chat's participant ids, served from the cache when
+// fresh and from the DB on a miss (repopulating the cache). ok is false only
+// when the lookup itself failed; a deleted chat is a successful empty result.
+// Runs on the hub goroutine, so the cache needs no lock.
+func (h *Hub) participants(chatID uuid.UUID) ([]uuid.UUID, bool) {
+	if e, hit := h.partCache.entries[chatID]; hit && time.Since(e.fetched) < h.partCache.ttl {
+		return e.ids, true
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), hubDBTimeout)
+	defer cancel()
+
+	ids, err := h.chatService.ParticipantIDs(ctx, chatID)
+	if err != nil {
+		slog.Error("failed to load chat participants", "error", err, "chat_id", chatID)
+		return nil, false
+	}
+
+	h.partCache.entries[chatID] = participantEntry{ids: ids, fetched: time.Now()}
+	return ids, true
 }
 
 func (h *Hub) sendTo(userID uuid.UUID, m WSMessage) {
@@ -187,5 +273,23 @@ func (h *Hub) sendTo(userID uuid.UUID, m WSMessage) {
 		// inline — sending to h.Unregister from the hub goroutine would deadlock.
 		delete(h.Clients, userID)
 		close(c.Send)
+	}
+}
+
+// sendEphemeral queues a frame the recipient can lose without noticing. A full
+// buffer drops the frame, not the client: the indicator simply expires on the
+// receiver, a state it is already built to handle. Killing a socket — and its
+// live message delivery — because a "typing…" hint could not be queued would
+// invert the priority exactly. A backed-up client thus sheds typing frames
+// first and keeps its message backlog, the degradation order we want.
+func (h *Hub) sendEphemeral(userID uuid.UUID, m WSMessage) {
+	c, ok := h.Clients[userID]
+	if !ok {
+		return
+	}
+
+	select {
+	case c.Send <- m:
+	default:
 	}
 }
